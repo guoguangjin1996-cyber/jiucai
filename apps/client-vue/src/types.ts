@@ -24,6 +24,36 @@ export type MarketPhase =
 
 export type DanmakuSentiment = "bullish" | "bearish" | "suspicious" | "panic" | "neutral";
 
+export type PositionAmountLevel = "light" | "normal" | "heavy";
+
+export type RetailToolType =
+  | "LEEK_RADAR"
+  | "T_PLUS_ONE_BELT"
+  | "AUCTION_920_ALARM"
+  | "WARNING_DANMAKU"
+  | "FAKE_ORDER_MIRROR"
+  | "QUANT_SNIFFER"
+  | "CORE_THERMOMETER"
+  | "COOL_DOWN_CONFIRM";
+
+export type RetailWarningDanmakuType =
+  | "WARN_RISK"
+  | "CALLOUT_FAKE_ORDER"
+  | "WARN_T_PLUS_ONE"
+  | "WARN_QUANT"
+  | "WARN_CORE_DIVE"
+  | "QUESTION_HYPE";
+
+export interface SubmitActionClientPayload extends Record<string, unknown> {
+  actionType: string;
+  action: string;
+  targetPlayerId?: string;
+  stockId?: string;
+  amountLevel?: PositionAmountLevel;
+  toolType?: RetailToolType;
+  warningType?: RetailWarningDanmakuType;
+}
+
 export interface WsMessage<T = unknown> {
   type: string;
   requestId?: string;

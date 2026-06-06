@@ -29,8 +29,12 @@ import type {
   GameRoomType,
   MarketPhase,
   MarketStock,
+  PositionAmountLevel,
+  RetailToolType,
+  RetailWarningDanmakuType,
   RoomPlayer,
-  RoomSnapshot
+  RoomSnapshot,
+  SubmitActionClientPayload
 } from "./types";
 import { GameSocket, type ClientEvent } from "./ws";
 
@@ -151,6 +155,30 @@ const fallbackStocks: MarketStock[] = [
   }
 ];
 const fallbackLeadStock = fallbackStocks[0] as MarketStock;
+const selectedStockId = ref(fallbackLeadStock.id);
+const selectedAmountLevel = ref<PositionAmountLevel>("normal");
+const selectedToolType = ref<RetailToolType>("LEEK_RADAR");
+const selectedWarningType = ref<RetailWarningDanmakuType>("WARN_RISK");
+
+const amountOptions: Array<{ value: PositionAmountLevel; label: string }> = [
+  { value: "light", label: "轻仓试探" },
+  { value: "normal", label: "正常嘴硬" },
+  { value: "heavy", label: "重仓上头" }
+];
+
+const retailToolButtons: Array<{ toolType: RetailToolType; label: string }> = [
+  { toolType: "LEEK_RADAR", label: "韭菜雷达" },
+  { toolType: "QUANT_SNIFFER", label: "量化闻味器" },
+  { toolType: "FAKE_ORDER_MIRROR", label: "假单照妖镜" },
+  { toolType: "CORE_THERMOMETER", label: "中军体温计" }
+];
+
+const warningDanmakuButtons: Array<{ warningType: RetailWarningDanmakuType; label: string }> = [
+  { warningType: "WARN_T_PLUS_ONE", label: "T+1预警" },
+  { warningType: "WARN_QUANT", label: "量化预警" },
+  { warningType: "CALLOUT_FAKE_ORDER", label: "假单点名" },
+  { warningType: "WARN_CORE_DIVE", label: "中军跳水" }
+];
 
 const actionGroups = computed<ActionButton[]>(() => {
   const phase = room.value?.phase;
@@ -261,7 +289,9 @@ const visibleStocks = computed(() => {
   return stocks.length > 0 ? stocks : fallbackStocks;
 });
 
-const leadStock = computed<MarketStock>(() => visibleStocks.value[0] ?? fallbackLeadStock);
+const leadStock = computed<MarketStock>(
+  () => visibleStocks.value.find((stock) => stock.id === selectedStockId.value) ?? visibleStocks.value[0] ?? fallbackLeadStock
+);
 
 const topStocks = computed(() =>
   [...visibleStocks.value].sort((left, right) => right.changePercent - left.changePercent).slice(0, 5)
@@ -338,7 +368,34 @@ function startGame(): void {
 }
 
 function submitAction(actionType: string, action: string): void {
-  socket.send("game:submitAction", { actionType, action });
+  socket.send("game:submitAction", buildSubmitActionPayload(actionType, action));
+}
+
+function submitRetailToolAction(toolType: RetailToolType, warningType?: RetailWarningDanmakuType): void {
+  selectedToolType.value = toolType;
+  if (warningType !== undefined) {
+    selectedWarningType.value = warningType;
+  }
+  socket.send("game:submitAction", {
+    actionType: "retailTool",
+    action: toolType,
+    stockId: selectedStockId.value,
+    toolType,
+    ...(warningType === undefined ? {} : { warningType })
+  } satisfies SubmitActionClientPayload);
+}
+
+function buildSubmitActionPayload(actionType: string, action: string): SubmitActionClientPayload {
+  return {
+    actionType,
+    action,
+    stockId: selectedStockId.value,
+    amountLevel: selectedAmountLevel.value
+  };
+}
+
+function selectStock(stockId: string): void {
+  selectedStockId.value = stockId;
 }
 
 function submitVote(): void {
@@ -379,6 +436,10 @@ function handleSocketEvent(event: ClientEvent): void {
     room.value = event.room;
     selectedVoteTarget.value =
       event.room.players.find((player) => player.id !== selfPlayer.value?.id)?.id ?? "";
+    const firstStock = event.room.market?.sectors?.flatMap((sector) => sector.stocks)[0];
+    if (firstStock !== undefined && !visibleStocks.value.some((stock) => stock.id === selectedStockId.value)) {
+      selectedStockId.value = firstStock.id;
+    }
     return;
   }
 
@@ -642,6 +703,24 @@ function signedNumber(value: number | undefined): string {
             </div>
           </div>
 
+          <div class="trade-pickers">
+            <div>
+              <span>目标票</span>
+              <strong>{{ leadStock.name }}</strong>
+            </div>
+            <div class="amount-switch">
+              <button
+                v-for="item in amountOptions"
+                :key="item.value"
+                type="button"
+                :class="{ active: selectedAmountLevel === item.value }"
+                @click="selectedAmountLevel = item.value"
+              >
+                {{ item.label }}
+              </button>
+            </div>
+          </div>
+
           <div class="primary-actions">
             <button
               v-for="item in primaryActions"
@@ -665,11 +744,45 @@ function signedNumber(value: number | undefined): string {
             </button>
           </div>
           <p v-if="actionGroups.length === 0">{{ panicLine }}</p>
+
+          <div v-if="!isInstitutionView" class="retail-toolbox">
+            <div class="tool-grid">
+              <button
+                v-for="item in retailToolButtons"
+                :key="item.toolType"
+                type="button"
+                :class="{ active: selectedToolType === item.toolType }"
+                @click="submitRetailToolAction(item.toolType)"
+              >
+                {{ item.label }}
+              </button>
+            </div>
+            <div class="warning-grid">
+              <button
+                v-for="item in warningDanmakuButtons"
+                :key="item.warningType"
+                type="button"
+                :class="{ active: selectedWarningType === item.warningType }"
+                @click="submitRetailToolAction('WARNING_DANMAKU', item.warningType)"
+              >
+                预警弹幕 · {{ item.label }}
+              </button>
+            </div>
+          </div>
         </section>
 
         <section v-if="activeTab === 'market'" class="panel info-panel">
           <h3>抽象榜单</h3>
-          <article v-for="stock in topStocks" :key="stock.id" class="stock-row">
+          <article
+            v-for="stock in topStocks"
+            :key="stock.id"
+            class="stock-row selectable"
+            :class="{ selected: selectedStockId === stock.id }"
+            role="button"
+            tabindex="0"
+            @click="selectStock(stock.id)"
+            @keydown.enter="selectStock(stock.id)"
+          >
             <span>{{ stock.name }}</span>
             <b :class="{ red: stock.changePercent >= 0, green: stock.changePercent < 0 }">
               {{ percent(stock.changePercent) }}
@@ -790,3 +903,60 @@ function signedNumber(value: number | undefined): string {
     </section>
   </main>
 </template>
+
+<style scoped>
+.trade-pickers,
+.retail-toolbox {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.trade-pickers > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.amount-switch,
+.tool-grid,
+.warning-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tool-grid,
+.warning-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.amount-switch button,
+.tool-grid button,
+.warning-grid button {
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font-size: 12px;
+}
+
+.amount-switch button.active,
+.tool-grid button.active,
+.warning-grid button.active,
+.stock-row.selected {
+  border-color: rgba(255, 216, 92, 0.9);
+  background: rgba(255, 216, 92, 0.16);
+}
+
+.stock-row.selectable {
+  cursor: pointer;
+}
+
+.stock-row.selectable:focus-visible {
+  outline: 2px solid rgba(255, 216, 92, 0.9);
+  outline-offset: 2px;
+}
+</style>
