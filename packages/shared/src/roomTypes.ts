@@ -98,6 +98,7 @@ export const MINIMUM_PHASE_HOLD_SEC: Partial<Record<MarketPhase, number>> = {
 };
 
 export const SUBMISSION_PHASES: readonly MarketPhase[] = [
+  "INSTITUTION_PRIVATE_ROOM",
   "AUCTION_FREE",
   "AUCTION_LOCKED",
   "MORNING_TRADING",
