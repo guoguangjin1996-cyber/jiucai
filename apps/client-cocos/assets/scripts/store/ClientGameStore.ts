@@ -1,6 +1,8 @@
 import type {
   DanmakuItem,
   ElementSectorState,
+  type GameRoomType,
+  type GameRoomTypeConfig,
   MarketPhase,
   MarketRankings,
   PlayerRole
@@ -38,8 +40,18 @@ export interface ClientPlayer {
 export interface ClientRoom {
   id: string;
   status: "lobby" | "playing" | "finished";
+  roomType: GameRoomType;
+  roomTypeConfig: GameRoomTypeConfig;
   day: number;
+  maxDays: number;
   phase: MarketPhase;
+  submittedPlayerIds: string[];
+  phaseStartedAt?: number;
+  phaseEndsAt?: number;
+  virtualTime?: string;
+  targetMinutes?: number;
+  maxPositions?: number;
+  maxDailyActions?: number;
   players: ClientPlayer[];
   market?: {
     regulationHeat: number;
@@ -88,16 +100,23 @@ export class ClientGameStore {
     this.listeners.add(listener);
   }
 
-  createRoom(): void {
-    this.send("room:create", { nickname: this.nickname });
+  createRoom(roomType: GameRoomType = "STANDARD_20"): void {
+    this.send("room:create", { nickname: this.nickname, roomType });
   }
 
   addBot(): void {
     this.send("room:addBot", this.room === undefined ? {} : { roomId: this.room.id });
   }
 
-  startGame(): void {
-    this.send("game:start", this.room === undefined ? {} : { roomId: this.room.id });
+  startGame(roomType?: GameRoomType): void {
+    this.send(
+      "game:start",
+      this.room === undefined
+        ? roomType === undefined
+          ? {}
+          : { roomType }
+        : { roomId: this.room.id, ...(roomType === undefined ? {} : { roomType }) }
+    );
   }
 
   submitAction(action: string, targetPlayerId?: string): void {

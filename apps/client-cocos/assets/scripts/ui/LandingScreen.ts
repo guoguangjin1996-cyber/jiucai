@@ -12,9 +12,9 @@ export class LandingScreen {
     root.addChild(label("大A生存局", 31, Palette.textDark));
     root.addChild(label("8人同局 · 2名隐藏主力 · 6棵韭菜 · ROI排名定胜负", 20, Palette.textSub));
     root.addChild(this.renderMascotStage());
-    root.addChild(button("快速开局", () => this.store.createRoom(), Palette.red, 520, 76));
-    root.addChild(button("创建房间", () => this.store.createRoom(), Palette.green, 520, 76));
-    root.addChild(button("玩法说明", () => this.store.createRoom(), Palette.blue, 520, 70));
+    root.addChild(button("短线快跑房 · 10分钟 · 3日 · 9票", () => this.store.createRoom("QUICK_10"), Palette.red, 520, 76));
+    root.addChild(button("五日轮动房 · 20分钟 · 5日 · 30票", () => this.store.createRoom("STANDARD_20"), Palette.green, 520, 76));
+    root.addChild(button("全市场长盘房 · 30分钟 · 7日 · 30票", () => this.store.createRoom("LONG_30"), Palette.blue, 520, 70));
     root.addChild(label("虚构娱乐模拟，不构成投资建议，不接入真实行情或真实代码", 17, Palette.textSub));
     return root;
   }

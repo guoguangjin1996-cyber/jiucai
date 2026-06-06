@@ -18,8 +18,8 @@ export class RoomScreen {
   private renderHeader(room: ClientRoom): Node {
     const header = panel("RoomHeader", 620, 140, Palette.panelSoft);
     header.addChild(label(`房间号：${room.id}`, 28, Palette.textDark));
-    header.addChild(label("经典模式 · 8人局", 21, Palette.textSub));
-    header.addChild(label("2名隐藏主力 + 6棵韭菜 · ROI榜单见真章", 20, Palette.success));
+    header.addChild(label(`${room.roomTypeConfig.name} · ${room.targetMinutes ?? room.roomTypeConfig.targetMinutes}分钟 · ${room.maxDays}交易日`, 21, Palette.textSub));
+    header.addChild(label(`持仓${room.maxPositions ?? room.roomTypeConfig.maxPositions}只 · 每日${room.maxDailyActions ?? room.roomTypeConfig.maxDailyActions}动 · ${room.roomTypeConfig.suitableFor}`, 20, Palette.success));
     return header;
   }
 

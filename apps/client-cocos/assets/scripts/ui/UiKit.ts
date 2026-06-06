@@ -1,4 +1,4 @@
-import { Button, Color, Label, Layout, Node, Sprite, UITransform } from "cc";
+import { Button, Color, Graphics, Label, Layout, Node, UITransform } from "cc";
 
 export const Palette = {
   sky: new Color(221, 245, 255, 255),
@@ -23,7 +23,10 @@ export const Palette = {
 export function panel(name: string, width: number, height: number, color = Palette.panel): Node {
   const node = new Node(name);
   node.addComponent(UITransform).setContentSize(width, height);
-  node.addComponent(Sprite).color = color;
+  const graphics = node.addComponent(Graphics);
+  graphics.fillColor = color;
+  graphics.rect(-width / 2, -height / 2, width, height);
+  graphics.fill();
   const layout = node.addComponent(Layout);
   layout.type = Layout.Type.VERTICAL;
   layout.resizeMode = Layout.ResizeMode.NONE;
