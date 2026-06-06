@@ -121,6 +121,25 @@ export type RetailWarningDanmakuType =
   | "WARN_CORE_DIVE"
   | "QUESTION_HYPE";
 
+export type InstitutionMarketAction =
+  | "FAKE_SEAL_BOARD"
+  | "REAL_SEAL_BOARD"
+  | "JOINT_SEAL_BOARD"
+  | "IGNITE_TAIL"
+  | "STABILIZE_CORE"
+  | "SMASH_LEADER"
+  | "BREAK_BOARD"
+  | "PRY_FLOOR";
+
+export type OffMarketActionType =
+  | "BUY_RUMOR"
+  | "BUY_INTEL"
+  | "KOL_PROMOTION"
+  | "STORY_POST"
+  | "WATER_ARMY_DANMAKU"
+  | "REGULATION_PR"
+  | "MISLEAD_QUANT";
+
 export interface PositionState {
   stockId?: string;
   stockName?: string;

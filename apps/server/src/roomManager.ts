@@ -8,8 +8,12 @@ import {
   type GameLog,
   type GameRoom,
   type GameRoomType,
+  type InstitutionMarketAction,
+  type InstitutionPlayerState,
   type MarketPhase,
+  type OffMarketActionType,
   type QuantStrategy,
+  type StockMarketState,
   INITIAL_RETAIL_CAPITAL,
   INITIAL_CONFIDENCE,
   INITIAL_FAKE_NEWS,
@@ -81,6 +85,95 @@ const LIMIT_UP_SCORE = 7;
 const LIMIT_DOWN_SCORE = -7;
 const LIMIT_DOWN_SELL_FAIL_RATE = 0.8;
 
+const INSTITUTION_MARKET_ACTION_COSTS: Record<
+  InstitutionMarketAction,
+  {
+    operationCreditCost: number;
+    controlPointCost: number;
+    regulationHeatDelta?: number;
+    quantAttentionDelta?: number;
+    boardStrengthDelta?: number;
+    boardBreakRiskDelta?: number;
+    danmakuHeatDelta?: number;
+    changePercentDelta?: number;
+    sectorRiskDelta?: number;
+  }
+> = {
+  FAKE_SEAL_BOARD: { operationCreditCost: 1500, controlPointCost: 1, regulationHeatDelta: 1, quantAttentionDelta: 5 },
+  REAL_SEAL_BOARD: {
+    operationCreditCost: 3500,
+    controlPointCost: 2,
+    regulationHeatDelta: 2,
+    quantAttentionDelta: 12,
+    boardStrengthDelta: 15
+  },
+  JOINT_SEAL_BOARD: {
+    operationCreditCost: 3000,
+    controlPointCost: 2,
+    regulationHeatDelta: 3,
+    quantAttentionDelta: 18,
+    boardStrengthDelta: 20
+  },
+  IGNITE_TAIL: {
+    operationCreditCost: 1000,
+    controlPointCost: 1,
+    regulationHeatDelta: 1,
+    quantAttentionDelta: 10,
+    danmakuHeatDelta: 10,
+    changePercentDelta: 1.5
+  },
+  STABILIZE_CORE: { operationCreditCost: 1200, controlPointCost: 1, quantAttentionDelta: -8, sectorRiskDelta: -5 },
+  SMASH_LEADER: {
+    operationCreditCost: 3000,
+    controlPointCost: 2,
+    regulationHeatDelta: 2,
+    quantAttentionDelta: 15,
+    boardBreakRiskDelta: 15
+  },
+  BREAK_BOARD: {
+    operationCreditCost: 4000,
+    controlPointCost: 2,
+    regulationHeatDelta: 3,
+    quantAttentionDelta: 20,
+    boardBreakRiskDelta: 25
+  },
+  PRY_FLOOR: { operationCreditCost: 3500, controlPointCost: 2, regulationHeatDelta: 3, quantAttentionDelta: 18 }
+};
+
+const OFF_MARKET_ACTION_COSTS: Record<
+  OffMarketActionType,
+  {
+    influenceBudgetCost: number;
+    controlPointCost: number;
+    regulationHeatDelta?: number;
+    quantAttentionDelta?: number;
+    crowdednessDelta?: number;
+    tPlusOneCrowdednessDelta?: number;
+    danmakuHeatDelta?: number;
+    regulationAttentionDelta?: number;
+    sectorHeatDelta?: number;
+    mainForceHypePowerDelta?: number;
+  }
+> = {
+  BUY_RUMOR: { influenceBudgetCost: 15, controlPointCost: 1 },
+  BUY_INTEL: { influenceBudgetCost: 25, controlPointCost: 1 },
+  KOL_PROMOTION: {
+    influenceBudgetCost: 30,
+    controlPointCost: 1,
+    danmakuHeatDelta: 15,
+    regulationAttentionDelta: 5
+  },
+  STORY_POST: { influenceBudgetCost: 20, controlPointCost: 1, sectorHeatDelta: 5, danmakuHeatDelta: 8 },
+  WATER_ARMY_DANMAKU: {
+    influenceBudgetCost: 15,
+    controlPointCost: 1,
+    danmakuHeatDelta: 10,
+    mainForceHypePowerDelta: 10
+  },
+  REGULATION_PR: { influenceBudgetCost: 35, controlPointCost: 2, regulationHeatDelta: -10 },
+  MISLEAD_QUANT: { influenceBudgetCost: 40, controlPointCost: 2, quantAttentionDelta: -10 }
+};
+
 export class RoomError extends Error {
   constructor(
     public readonly code: string,
@@ -89,6 +182,14 @@ export class RoomError extends Error {
     super(message);
     this.name = "RoomError";
   }
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function formatDelta(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value}`;
 }
 
 export interface PlayerSession {
@@ -756,6 +857,14 @@ export class RoomManager {
       return this.markPlayerSubmitted(this.recordLeaderboardVote(room, player, payload, now), player.id);
     }
 
+    if (payload.actionType === "institutionMarketAction") {
+      return this.recordInstitutionMarketAction(room, player, payload, now);
+    }
+
+    if (payload.actionType === "offMarketAction") {
+      return this.recordOffMarketAction(room, player, payload, now);
+    }
+
     if (this.isIntradayAction(payload.action)) {
       return this.markPlayerSubmitted(
         this.recordIntradayAction(room, player, payload, now),
@@ -1135,6 +1244,364 @@ export class RoomManager {
     if (payload?.warningType !== undefined) actionPayload.warningType = payload.warningType;
 
     return actionPayload;
+  }
+
+  private recordInstitutionMarketAction(
+    room: RoomSnapshot,
+    player: RoomPlayer,
+    payload: SubmitActionPayload,
+    timestamp: number
+  ): RoomSnapshot {
+    if (!this.isInstitutionMarketAction(payload.action)) {
+      throw new RoomError("INVALID_ACTION", "未知盘口操盘动作。");
+    }
+    if (payload.stockId === undefined || payload.stockId.trim().length === 0) {
+      throw new RoomError("STOCK_REQUIRED", "盘口操盘动作需要 stockId。");
+    }
+
+    const stockInfo = this.findStockInRoom(room, payload.stockId);
+    if (stockInfo === undefined) {
+      throw new RoomError("STOCK_NOT_FOUND", "目标股票不存在。");
+    }
+
+    const cost = INSTITUTION_MARKET_ACTION_COSTS[payload.action];
+    const institution = this.getInstitutionResourceOrThrow(room, player);
+    this.assertInstitutionResources(institution, {
+      controlPointCost: cost.controlPointCost,
+      operationCreditCost: cost.operationCreditCost
+    });
+
+    const nextInstitution: InstitutionPlayerState = {
+      ...institution,
+      usedOperationCredit: Math.min(
+        institution.dailyOperationCredit,
+        institution.usedOperationCredit + cost.operationCreditCost
+      ),
+      controlPoints: Math.max(0, institution.controlPoints - cost.controlPointCost)
+    };
+    const nextInstitutions = (room.institutions ?? []).map((item) =>
+      item.playerId === player.id ? nextInstitution : item
+    );
+    const legacyInstitution = this.updateLegacyInstitutionResource(room, player.id, nextInstitution);
+    const market = room.market === undefined ? undefined : this.applyInstitutionMarketEffectToStock(room, payload.stockId, cost);
+    const effect = this.describeInstitutionMarketEffect(cost);
+    const updatedRoom = this.updateRoom(room.id, {
+      ...room,
+      ...(market === undefined ? {} : { market }),
+      institutions: nextInstitutions,
+      ...(legacyInstitution === undefined ? {} : { institution: legacyInstitution }),
+      logs: [
+        ...room.logs,
+        this.createLog({
+          timestamp,
+          day: room.day,
+          phase: room.phase,
+          type: "institution:marketAction",
+          message: `${player.nickname} 对 ${stockInfo.stock.name} 执行盘口操盘 ${payload.action}，消耗操盘额度 ${cost.operationCreditCost}、操盘点 ${cost.controlPointCost}。${effect}`,
+          payload: this.createActionLogPayload(player, "institutionMarketAction", payload.action, payload, {
+            cost,
+            effect
+          })
+        })
+      ],
+      updatedAt: timestamp
+    });
+
+    return this.cloneRoom(updatedRoom);
+  }
+
+  private recordOffMarketAction(
+    room: RoomSnapshot,
+    player: RoomPlayer,
+    payload: SubmitActionPayload,
+    timestamp: number
+  ): RoomSnapshot {
+    if (!this.isOffMarketAction(payload.action)) {
+      throw new RoomError("INVALID_ACTION", "未知场外操盘动作。");
+    }
+
+    const cost = OFF_MARKET_ACTION_COSTS[payload.action];
+    const institution = this.getInstitutionResourceOrThrow(room, player);
+    this.assertInstitutionResources(institution, {
+      controlPointCost: cost.controlPointCost,
+      influenceBudgetCost: cost.influenceBudgetCost
+    });
+
+    const stockInfo = payload.stockId === undefined ? undefined : this.findStockInRoom(room, payload.stockId);
+    if (payload.stockId !== undefined && stockInfo === undefined) {
+      throw new RoomError("STOCK_NOT_FOUND", "目标股票不存在。");
+    }
+
+    const nextInstitution: InstitutionPlayerState = {
+      ...institution,
+      influenceSpent: Math.min(institution.influenceBudget, institution.influenceSpent + cost.influenceBudgetCost),
+      controlPoints: Math.max(0, institution.controlPoints - cost.controlPointCost)
+    };
+    const nextInstitutions = (room.institutions ?? []).map((item) =>
+      item.playerId === player.id ? nextInstitution : item
+    );
+    const legacyInstitution = this.updateLegacyInstitutionResource(room, player.id, nextInstitution);
+    const market = room.market === undefined ? undefined : this.applyOffMarketEffect(room, payload.stockId, cost);
+    const effect = this.describeOffMarketEffect(payload.action, stockInfo?.stock, cost);
+    const targetName = stockInfo?.stock.name ?? "虚构盘面";
+    const updatedRoom = this.updateRoom(room.id, {
+      ...room,
+      ...(market === undefined ? {} : { market }),
+      institutions: nextInstitutions,
+      ...(legacyInstitution === undefined ? {} : { institution: legacyInstitution }),
+      logs: [
+        ...room.logs,
+        this.createLog({
+          timestamp,
+          day: room.day,
+          phase: room.phase,
+          type: "institution:offMarketAction",
+          message: `${player.nickname} 对 ${targetName} 执行场外操盘 ${payload.action}，消耗场外预算 ${cost.influenceBudgetCost}、操盘点 ${cost.controlPointCost}。${effect}`,
+          payload: this.createActionLogPayload(player, "offMarketAction", payload.action, payload, {
+            cost,
+            effect
+          })
+        })
+      ],
+      updatedAt: timestamp
+    });
+
+    return this.cloneRoom(updatedRoom);
+  }
+
+  private isInstitutionMarketAction(action: string): action is InstitutionMarketAction {
+    return Object.prototype.hasOwnProperty.call(INSTITUTION_MARKET_ACTION_COSTS, action);
+  }
+
+  private isOffMarketAction(action: string): action is OffMarketActionType {
+    return Object.prototype.hasOwnProperty.call(OFF_MARKET_ACTION_COSTS, action);
+  }
+
+  private getInstitutionResourceOrThrow(room: RoomSnapshot, player: RoomPlayer): InstitutionPlayerState {
+    if (player.role !== "institution") {
+      throw new RoomError("INSTITUTION_ONLY", "只有主力可以使用主力工具。");
+    }
+
+    const institution = room.institutions?.find((item) => item.playerId === player.id);
+    if (institution === undefined) {
+      throw new RoomError("INSTITUTION_ONLY", "当前玩家没有主力资源状态。");
+    }
+    return institution;
+  }
+
+  private assertInstitutionResources(
+    institution: InstitutionPlayerState,
+    cost: {
+      controlPointCost: number;
+      operationCreditCost?: number;
+      influenceBudgetCost?: number;
+    }
+  ): void {
+    if (institution.controlPoints < cost.controlPointCost) {
+      throw new RoomError("CONTROL_POINTS_NOT_ENOUGH", "操盘点已用完。");
+    }
+    if (
+      cost.operationCreditCost !== undefined &&
+      institution.dailyOperationCredit - institution.usedOperationCredit < cost.operationCreditCost
+    ) {
+      throw new RoomError("OPERATION_CREDIT_NOT_ENOUGH", "今日操盘额度已用完。");
+    }
+    if (
+      cost.influenceBudgetCost !== undefined &&
+      institution.influenceBudget - institution.influenceSpent < cost.influenceBudgetCost
+    ) {
+      throw new RoomError("INFLUENCE_BUDGET_NOT_ENOUGH", "场外预算已烧完。");
+    }
+  }
+
+  private updateLegacyInstitutionResource(
+    room: RoomSnapshot,
+    playerId: string,
+    institution: InstitutionPlayerState
+  ): RoomSnapshot["institution"] {
+    if (room.institution === undefined) {
+      return undefined;
+    }
+
+    return {
+      ...room.institution,
+      controlPoints: room.institution.playerId === playerId ? institution.controlPoints : room.institution.controlPoints,
+      fakeNewsCount: room.institution.playerId === playerId ? institution.fakeNewsCount : room.institution.fakeNewsCount,
+      usedActions: [...room.institution.usedActions]
+    };
+  }
+
+  private findStockInRoom(
+    room: RoomSnapshot,
+    stockId: string
+  ): { stock: StockMarketState; sector: ElementSectorState } | undefined {
+    for (const sector of room.market?.sectors ?? []) {
+      const stock = sector.stocks.find((item) => item.id === stockId);
+      if (stock !== undefined) {
+        return { stock, sector };
+      }
+    }
+    return undefined;
+  }
+
+  private applyInstitutionMarketEffectToStock(
+    room: RoomSnapshot,
+    stockId: string,
+    cost: (typeof INSTITUTION_MARKET_ACTION_COSTS)[InstitutionMarketAction]
+  ): NonNullable<RoomSnapshot["market"]> | undefined {
+    if (room.market === undefined) {
+      return undefined;
+    }
+
+    const sectors = room.market.sectors?.map((sector) => {
+      const hasTargetStock = sector.stocks.some((stock) => stock.id === stockId);
+      return {
+        ...sector,
+        risk: clampNumber(sector.risk + (hasTargetStock ? cost.sectorRiskDelta ?? 0 : 0), 0, 100),
+        riskScore: clampNumber(sector.riskScore + (hasTargetStock ? cost.sectorRiskDelta ?? 0 : 0), 0, 100),
+        stocks: sector.stocks.map((stock) =>
+          stock.id === stockId
+            ? this.applyStockEffect(stock, {
+                quantAttentionDelta: cost.quantAttentionDelta,
+                boardStrengthDelta: cost.boardStrengthDelta,
+                boardBreakRiskDelta: cost.boardBreakRiskDelta,
+                danmakuHeatDelta: cost.danmakuHeatDelta,
+                changePercentDelta: cost.changePercentDelta
+              })
+            : stock
+        )
+      };
+    });
+    const regulationHeat = clampNumber(room.market.regulationHeat + (cost.regulationHeatDelta ?? 0), 0, 100);
+
+    return {
+      ...room.market,
+      regulationHeat,
+      regulationState: getRegulationState(regulationHeat),
+      ...(sectors === undefined
+        ? {}
+        : {
+            sectors,
+            rankings: resolveMarketRankings(resolveSectorStatusTags(resolveStockTags(sectors)))
+          })
+    };
+  }
+
+  private applyOffMarketEffect(
+    room: RoomSnapshot,
+    stockId: string | undefined,
+    cost: (typeof OFF_MARKET_ACTION_COSTS)[OffMarketActionType]
+  ): NonNullable<RoomSnapshot["market"]> | undefined {
+    if (room.market === undefined) {
+      return undefined;
+    }
+
+    const sectors = room.market.sectors?.map((sector) => {
+      const hasTargetStock = stockId !== undefined && sector.stocks.some((stock) => stock.id === stockId);
+      return {
+        ...sector,
+        heat: clampNumber(sector.heat + (hasTargetStock ? cost.sectorHeatDelta ?? 0 : 0), 0, 100),
+        stocks: sector.stocks.map((stock) =>
+          stockId !== undefined && stock.id === stockId
+            ? this.applyStockEffect(stock, {
+                quantAttentionDelta: cost.quantAttentionDelta,
+                crowdednessDelta: cost.crowdednessDelta,
+                tPlusOneCrowdednessDelta: cost.tPlusOneCrowdednessDelta,
+                danmakuHeatDelta: cost.danmakuHeatDelta,
+                regulationAttentionDelta: cost.regulationAttentionDelta,
+                mainForceHypePowerDelta: cost.mainForceHypePowerDelta
+              })
+            : stock
+        )
+      };
+    });
+    const regulationHeat = clampNumber(room.market.regulationHeat + (cost.regulationHeatDelta ?? 0), 0, 100);
+
+    return {
+      ...room.market,
+      regulationHeat,
+      regulationState: getRegulationState(regulationHeat),
+      ...(sectors === undefined
+        ? {}
+        : {
+            sectors,
+            rankings: resolveMarketRankings(resolveSectorStatusTags(resolveStockTags(sectors)))
+          })
+    };
+  }
+
+  private applyStockEffect(
+    stock: StockMarketState,
+    effect: {
+      quantAttentionDelta?: number | undefined;
+      crowdednessDelta?: number | undefined;
+      tPlusOneCrowdednessDelta?: number | undefined;
+      danmakuHeatDelta?: number | undefined;
+      regulationAttentionDelta?: number | undefined;
+      boardStrengthDelta?: number | undefined;
+      boardBreakRiskDelta?: number | undefined;
+      changePercentDelta?: number | undefined;
+      mainForceHypePowerDelta?: number | undefined;
+    }
+  ): StockMarketState {
+    const updated: StockMarketState = {
+      ...stock,
+      quantAttention: clampNumber(stock.quantAttention + (effect.quantAttentionDelta ?? 0), 0, 100),
+      crowdedness: clampNumber(stock.crowdedness + (effect.crowdednessDelta ?? 0), 0, 100),
+      tPlusOneCrowdedness: clampNumber(stock.tPlusOneCrowdedness + (effect.tPlusOneCrowdednessDelta ?? 0), 0, 100),
+      danmakuHeat: clampNumber(stock.danmakuHeat + (effect.danmakuHeatDelta ?? 0), 0, 100),
+      regulationAttention: clampNumber(stock.regulationAttention + (effect.regulationAttentionDelta ?? 0), 0, 100),
+      boardStrength: clampNumber(stock.boardStrength + (effect.boardStrengthDelta ?? 0), 0, 100),
+      boardBreakRisk: clampNumber(stock.boardBreakRisk + (effect.boardBreakRiskDelta ?? 0), 0, 100),
+      changePercent: Math.round((stock.changePercent + (effect.changePercentDelta ?? 0)) * 100) / 100
+    };
+
+    if (stock.mainForceHypePower !== undefined || effect.mainForceHypePowerDelta !== undefined) {
+      updated.mainForceHypePower = clampNumber(
+        (stock.mainForceHypePower ?? 0) + (effect.mainForceHypePowerDelta ?? 0),
+        0,
+        100
+      );
+    }
+
+    return updated;
+  }
+
+  private describeInstitutionMarketEffect(
+    cost: (typeof INSTITUTION_MARKET_ACTION_COSTS)[InstitutionMarketAction]
+  ): string {
+    const parts = [
+      cost.regulationHeatDelta === undefined ? undefined : `监管热度${formatDelta(cost.regulationHeatDelta)}`,
+      cost.quantAttentionDelta === undefined ? undefined : `量化关注${formatDelta(cost.quantAttentionDelta)}`,
+      cost.boardStrengthDelta === undefined ? undefined : `封板强度${formatDelta(cost.boardStrengthDelta)}`,
+      cost.boardBreakRiskDelta === undefined ? undefined : `炸板风险${formatDelta(cost.boardBreakRiskDelta)}`,
+      cost.danmakuHeatDelta === undefined ? undefined : `弹幕热度${formatDelta(cost.danmakuHeatDelta)}`,
+      cost.changePercentDelta === undefined ? undefined : `涨跌幅${formatDelta(cost.changePercentDelta)}`
+    ].filter((part): part is string => part !== undefined);
+    return parts.length === 0 ? "效果：记录操盘痕迹。" : `效果：${parts.join("，")}。`;
+  }
+
+  private describeOffMarketEffect(
+    action: OffMarketActionType,
+    stock: StockMarketState | undefined,
+    cost: (typeof OFF_MARKET_ACTION_COSTS)[OffMarketActionType]
+  ): string {
+    if (action === "BUY_INTEL" && stock !== undefined) {
+      return `情报摘要：量化关注 ${stock.quantAttention}，拥挤度 ${stock.crowdedness}，T+1拥挤 ${stock.tPlusOneCrowdedness}。`;
+    }
+    if (action === "BUY_RUMOR") {
+      return "情报日志：虚构小道消息已记录。";
+    }
+
+    const parts = [
+      cost.regulationHeatDelta === undefined ? undefined : `监管热度${formatDelta(cost.regulationHeatDelta)}`,
+      cost.quantAttentionDelta === undefined ? undefined : `量化关注${formatDelta(cost.quantAttentionDelta)}`,
+      cost.danmakuHeatDelta === undefined ? undefined : `弹幕热度${formatDelta(cost.danmakuHeatDelta)}`,
+      cost.regulationAttentionDelta === undefined ? undefined : `监管关注${formatDelta(cost.regulationAttentionDelta)}`,
+      cost.sectorHeatDelta === undefined ? undefined : `板块热度${formatDelta(cost.sectorHeatDelta)}`,
+      cost.mainForceHypePowerDelta === undefined ? undefined : `主力水军${formatDelta(cost.mainForceHypePowerDelta)}`
+    ].filter((part): part is string => part !== undefined);
+    return parts.length === 0 ? "效果：记录场外操盘痕迹。" : `效果：${parts.join("，")}。`;
   }
 
   private createVoiceLineForPhase(
