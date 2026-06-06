@@ -44,6 +44,25 @@ export type RetailWarningDanmakuType =
   | "WARN_CORE_DIVE"
   | "QUESTION_HYPE";
 
+export type InstitutionMarketAction =
+  | "FAKE_SEAL_BOARD"
+  | "REAL_SEAL_BOARD"
+  | "JOINT_SEAL_BOARD"
+  | "IGNITE_TAIL"
+  | "STABILIZE_CORE"
+  | "SMASH_LEADER"
+  | "BREAK_BOARD"
+  | "PRY_FLOOR";
+
+export type OffMarketActionType =
+  | "BUY_RUMOR"
+  | "BUY_INTEL"
+  | "KOL_PROMOTION"
+  | "STORY_POST"
+  | "WATER_ARMY_DANMAKU"
+  | "REGULATION_PR"
+  | "MISLEAD_QUANT";
+
 export interface SubmitActionClientPayload extends Record<string, unknown> {
   actionType: string;
   action: string;
@@ -52,6 +71,36 @@ export interface SubmitActionClientPayload extends Record<string, unknown> {
   amountLevel?: PositionAmountLevel;
   toolType?: RetailToolType;
   warningType?: RetailWarningDanmakuType;
+}
+
+export interface InstitutionState {
+  playerId: string;
+  controlPoints: number;
+  fakeNewsCount: number;
+  exposure: number;
+  harvestScore: number;
+  washScore: number;
+  usedActions: string[];
+}
+
+export interface InstitutionPlayerState {
+  playerId: string;
+  initialCapital: number;
+  capital: number;
+  finalCapital: number;
+  roi: number;
+  managedCapital: number;
+  dailyOperationCredit: number;
+  usedOperationCredit: number;
+  influenceBudget: number;
+  influenceSpent: number;
+  controlPoints: number;
+  maxControlPoints: number;
+  fakeNewsCount: number;
+  personalHarvestScore: number;
+  exposed: boolean;
+  focused: boolean;
+  hiddenDays: number;
 }
 
 export interface WsMessage<T = unknown> {
@@ -107,6 +156,7 @@ export interface MarketStock {
   currentPrice: number;
   changePercent: number;
   tags: string[];
+  danmakuHeat?: number;
   isLimitUp: boolean;
   isLimitDown: boolean;
   boardStrength: number;
@@ -114,6 +164,12 @@ export interface MarketStock {
   tPlusOneCrowdedness: number;
   quantAttention: number;
   regulationAttention: number;
+  overheatRisk?: number;
+  riskFlags?: string[];
+  retailWarningPower?: number;
+  mainForceHypePower?: number;
+  noisePower?: number;
+  nextDayLowOpenRisk?: number;
 }
 
 export interface MarketSector {
@@ -144,6 +200,8 @@ export interface RoomSnapshot {
   };
   hostPlayerId: string;
   players: RoomPlayer[];
+  institutionState?: InstitutionState;
+  institutions?: InstitutionPlayerState[];
   day: number;
   maxDays: number;
   phase: MarketPhase;

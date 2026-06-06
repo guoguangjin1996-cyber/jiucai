@@ -7,9 +7,7 @@ import {
   CalendarCheck,
   ChevronLeft,
   CircleHelp,
-  ClipboardList,
   DoorOpen,
-  Gavel,
   Home,
   MessageCircle,
   Play,
@@ -19,7 +17,6 @@ import {
   Store,
   Trophy,
   UserRound,
-  Users,
   Vote,
   Wifi
 } from "@lucide/vue";
@@ -27,8 +24,10 @@ import { computed, onBeforeUnmount, ref } from "vue";
 import type {
   DanmakuSentiment,
   GameRoomType,
+  InstitutionMarketAction,
   MarketPhase,
   MarketStock,
+  OffMarketActionType,
   PositionAmountLevel,
   RetailToolType,
   RetailWarningDanmakuType,
@@ -115,13 +114,17 @@ const fallbackStocks: MarketStock[] = [
     currentPrice: 10.05,
     changePercent: 5.26,
     tags: ["人气很吵", "T+1卡门"],
+    danmakuHeat: 58,
     isLimitUp: false,
     isLimitDown: false,
     boardStrength: 68,
     boardBreakRisk: 31,
     tPlusOneCrowdedness: 62,
     quantAttention: 38,
-    regulationAttention: 24
+    regulationAttention: 24,
+    overheatRisk: 54,
+    riskFlags: ["T+1拥挤"],
+    retailWarningPower: 22
   },
   {
     id: "stock-noodle",
@@ -130,13 +133,17 @@ const fallbackStocks: MarketStock[] = [
     currentPrice: 8.88,
     changePercent: -1.23,
     tags: ["后排举手", "量化偷看"],
+    danmakuHeat: 42,
     isLimitUp: false,
     isLimitDown: false,
     boardStrength: 25,
     boardBreakRisk: 54,
     tPlusOneCrowdedness: 40,
     quantAttention: 61,
-    regulationAttention: 18
+    regulationAttention: 18,
+    overheatRisk: 46,
+    riskFlags: ["量化盯上"],
+    retailWarningPower: 35
   },
   {
     id: "stock-platform",
@@ -145,13 +152,17 @@ const fallbackStocks: MarketStock[] = [
     currentPrice: 12.3,
     changePercent: 2.35,
     tags: ["中军嘴硬", "轮动迷路"],
+    danmakuHeat: 36,
     isLimitUp: false,
     isLimitDown: false,
     boardStrength: 52,
     boardBreakRisk: 22,
     tPlusOneCrowdedness: 34,
     quantAttention: 28,
-    regulationAttention: 15
+    regulationAttention: 15,
+    overheatRisk: 30,
+    riskFlags: [],
+    retailWarningPower: 18
   }
 ];
 const fallbackLeadStock = fallbackStocks[0] as MarketStock;
@@ -168,16 +179,40 @@ const amountOptions: Array<{ value: PositionAmountLevel; label: string }> = [
 
 const retailToolButtons: Array<{ toolType: RetailToolType; label: string }> = [
   { toolType: "LEEK_RADAR", label: "韭菜雷达" },
+  { toolType: "T_PLUS_ONE_BELT", label: "T+1安全带" },
   { toolType: "QUANT_SNIFFER", label: "量化闻味器" },
   { toolType: "FAKE_ORDER_MIRROR", label: "假单照妖镜" },
-  { toolType: "CORE_THERMOMETER", label: "中军体温计" }
+  { toolType: "CORE_THERMOMETER", label: "中军体温计" },
+  { toolType: "COOL_DOWN_CONFIRM", label: "冷静三秒" }
 ];
 
 const warningDanmakuButtons: Array<{ warningType: RetailWarningDanmakuType; label: string }> = [
   { warningType: "WARN_T_PLUS_ONE", label: "T+1预警" },
   { warningType: "WARN_QUANT", label: "量化预警" },
   { warningType: "CALLOUT_FAKE_ORDER", label: "假单点名" },
-  { warningType: "WARN_CORE_DIVE", label: "中军跳水" }
+  { warningType: "WARN_CORE_DIVE", label: "中军跳水" },
+  { warningType: "QUESTION_HYPE", label: "质疑水军" }
+];
+
+const institutionMarketActions: Array<{ action: InstitutionMarketAction; label: string }> = [
+  { action: "FAKE_SEAL_BOARD", label: "假封板" },
+  { action: "REAL_SEAL_BOARD", label: "真封板" },
+  { action: "JOINT_SEAL_BOARD", label: "联合封板" },
+  { action: "IGNITE_TAIL", label: "点火后排" },
+  { action: "STABILIZE_CORE", label: "稳中军" },
+  { action: "SMASH_LEADER", label: "砸龙头" },
+  { action: "BREAK_BOARD", label: "炸板" },
+  { action: "PRY_FLOOR", label: "撬地板" }
+];
+
+const offMarketActions: Array<{ action: OffMarketActionType; label: string }> = [
+  { action: "BUY_RUMOR", label: "买小道消息" },
+  { action: "BUY_INTEL", label: "买深度情报" },
+  { action: "KOL_PROMOTION", label: "请大V" },
+  { action: "STORY_POST", label: "发小作文" },
+  { action: "WATER_ARMY_DANMAKU", label: "水军弹幕" },
+  { action: "REGULATION_PR", label: "监管公关" },
+  { action: "MISLEAD_QUANT", label: "误导量化" }
 ];
 
 const actionGroups = computed<ActionButton[]>(() => {
@@ -264,6 +299,59 @@ const isHost = computed(() => selfPlayer.value?.id === room.value?.hostPlayerId)
 
 const isInstitutionView = computed(() => selfPlayer.value?.role === "institution");
 
+const selfInstitutionState = computed(() => {
+  const currentPlayerId = selfPlayer.value?.id;
+  if (currentPlayerId === undefined) return undefined;
+  return room.value?.institutions?.find((institution) => institution.playerId === currentPlayerId);
+});
+
+const operationCreditLeft = computed(() => {
+  const state = selfInstitutionState.value;
+  if (state === undefined) return 0;
+  return Math.max(0, state.dailyOperationCredit - state.usedOperationCredit);
+});
+
+const influenceBudgetLeft = computed(() => {
+  const state = selfInstitutionState.value;
+  if (state === undefined) return 0;
+  return Math.max(0, state.influenceBudget - state.influenceSpent);
+});
+
+const canUseMarketOperation = computed(() => {
+  const state = selfInstitutionState.value;
+  return state !== undefined && state.controlPoints > 0 && operationCreditLeft.value > 0;
+});
+
+const canUseOffMarketAction = computed(() => {
+  const state = selfInstitutionState.value;
+  return state !== undefined && state.controlPoints > 0 && influenceBudgetLeft.value > 0;
+});
+
+const institutionToolHint = computed(() => {
+  const state = selfInstitutionState.value;
+  if (state === undefined) return "等待主力资源同步。";
+  if (state.controlPoints <= 0) return "操盘点已用完";
+  if (operationCreditLeft.value <= 0) return "今日操盘额度已用完";
+  if (influenceBudgetLeft.value <= 0) return "场外预算已烧完";
+  return "";
+});
+
+const marketOperationHint = computed(() => {
+  const state = selfInstitutionState.value;
+  if (state === undefined) return "等待主力资源同步。";
+  if (state.controlPoints <= 0) return "操盘点已用完";
+  if (operationCreditLeft.value <= 0) return "今日操盘额度已用完";
+  return "";
+});
+
+const offMarketActionHint = computed(() => {
+  const state = selfInstitutionState.value;
+  if (state === undefined) return "等待主力资源同步。";
+  if (state.controlPoints <= 0) return "操盘点已用完";
+  if (influenceBudgetLeft.value <= 0) return "场外预算已烧完";
+  return "";
+});
+
 const phasePercent = computed(() => {
   const currentRoom = room.value;
   if (currentRoom?.phaseStartedAt === undefined || currentRoom.phaseEndsAt === undefined) return 0;
@@ -293,9 +381,38 @@ const leadStock = computed<MarketStock>(
   () => visibleStocks.value.find((stock) => stock.id === selectedStockId.value) ?? visibleStocks.value[0] ?? fallbackLeadStock
 );
 
+const selectedStock = computed<MarketStock | undefined>(
+  () => visibleStocks.value.find((stock) => stock.id === selectedStockId.value) ?? leadStock.value
+);
+
 const topStocks = computed(() =>
   [...visibleStocks.value].sort((left, right) => right.changePercent - left.changePercent).slice(0, 5)
 );
+
+const stockRiskLines = computed(() => {
+  const stock = selectedStock.value;
+  if (stock === undefined) return ["请先选择一只纳音票"];
+
+  const lines: string[] = [];
+  if ((stock.overheatRisk ?? 0) >= 80) {
+    lines.push("看起来很强，但车上人太多，算法已经闻到韭菜味。");
+  }
+  if ((stock.retailWarningPower ?? 0) >= 60) {
+    lines.push("热度高，但韭菜还算清醒。");
+  }
+  if (stock.tPlusOneCrowdedness >= 70) {
+    lines.push("大家都在车上，但车门明天才开。");
+  }
+  if (stock.quantAttention >= 80) {
+    lines.push("量化正在靠近，别把自己摆成数据。");
+  }
+  if (stock.regulationAttention >= 70) {
+    lines.push("盘面太抽象，监管开始眯眼。");
+  }
+  return lines.length > 0 ? lines : ["虚构盘面暂时没冒红灯，但嘴硬也要看路。"];
+});
+
+const canUseRetailTools = computed(() => !isInstitutionView.value && selectedStock.value !== undefined);
 
 const latestLogs = computed(() => [...(room.value?.logs ?? [])].slice(-4).reverse());
 const latestDanmaku = computed(() => [...(room.value?.danmaku ?? [])].slice(-5).reverse());
@@ -372,6 +489,8 @@ function submitAction(actionType: string, action: string): void {
 }
 
 function submitRetailToolAction(toolType: RetailToolType, warningType?: RetailWarningDanmakuType): void {
+  const stock = selectedStock.value;
+  if (stock === undefined) return;
   selectedToolType.value = toolType;
   if (warningType !== undefined) {
     selectedWarningType.value = warningType;
@@ -379,7 +498,7 @@ function submitRetailToolAction(toolType: RetailToolType, warningType?: RetailWa
   socket.send("game:submitAction", {
     actionType: "retailTool",
     action: toolType,
-    stockId: selectedStockId.value,
+    stockId: stock.id,
     toolType,
     ...(warningType === undefined ? {} : { warningType })
   } satisfies SubmitActionClientPayload);
@@ -389,13 +508,35 @@ function buildSubmitActionPayload(actionType: string, action: string): SubmitAct
   return {
     actionType,
     action,
-    stockId: selectedStockId.value,
+    stockId: resolveSelectedStockId(),
     amountLevel: selectedAmountLevel.value
   };
 }
 
 function selectStock(stockId: string): void {
   selectedStockId.value = stockId;
+}
+
+function submitInstitutionMarketAction(action: InstitutionMarketAction): void {
+  if (!canUseMarketOperation.value) return;
+  socket.send("game:submitAction", {
+    actionType: "institutionMarketAction",
+    action,
+    stockId: resolveSelectedStockId()
+  } satisfies SubmitActionClientPayload);
+}
+
+function submitOffMarketAction(action: OffMarketActionType): void {
+  if (!canUseOffMarketAction.value) return;
+  socket.send("game:submitAction", {
+    actionType: "offMarketAction",
+    action,
+    stockId: resolveSelectedStockId()
+  } satisfies SubmitActionClientPayload);
+}
+
+function resolveSelectedStockId(): string {
+  return selectedStockId.value || leadStock.value.id;
 }
 
 function submitVote(): void {
@@ -689,6 +830,66 @@ function signedNumber(value: number | undefined): string {
             <span class="up">天花板 {{ room.market?.limitUpPrice?.toFixed?.(2) ?? "11.00" }}</span>
             <span class="down">地板砖 {{ room.market?.limitDownPrice?.toFixed?.(2) ?? "9.00" }}</span>
           </div>
+
+          <section class="stock-detail">
+            <div class="detail-title">
+              <div>
+                <span>纳音票详情</span>
+                <h3>{{ selectedStock?.name ?? "请先选择一只纳音票" }}</h3>
+              </div>
+              <b :class="{ red: (selectedStock?.changePercent ?? 0) >= 0, green: (selectedStock?.changePercent ?? 0) < 0 }">
+                {{ percent(selectedStock?.changePercent) }}
+              </b>
+            </div>
+            <div class="detail-tags">
+              <span>{{ selectedStock?.element ?? "五行未知" }}</span>
+              <span v-for="tag in selectedStock?.tags ?? []" :key="tag">{{ tag }}</span>
+              <span v-for="flag in selectedStock?.riskFlags ?? []" :key="flag" class="risk">{{ flag }}</span>
+              <span v-if="(selectedStock?.tags ?? []).length === 0 && (selectedStock?.riskFlags ?? []).length === 0">
+                虚构观察
+              </span>
+            </div>
+            <div class="risk-metrics">
+              <span>封板强度 <b>{{ Math.round(selectedStock?.boardStrength ?? 0) }}</b></span>
+              <span>炸板风险 <b>{{ Math.round(selectedStock?.boardBreakRisk ?? 0) }}</b></span>
+              <span>弹幕热度 <b>{{ Math.round(selectedStock?.danmakuHeat ?? 0) }}</b></span>
+              <span>T+1拥挤 <b>{{ Math.round(selectedStock?.tPlusOneCrowdedness ?? 0) }}</b></span>
+              <span>量化关注 <b>{{ Math.round(selectedStock?.quantAttention ?? 0) }}</b></span>
+              <span>监管关注 <b>{{ Math.round(selectedStock?.regulationAttention ?? 0) }}</b></span>
+              <span>过热收割风险 <b>{{ Math.round(selectedStock?.overheatRisk ?? 0) }}</b></span>
+              <span>韭菜预警力 <b>{{ Math.round(selectedStock?.retailWarningPower ?? 0) }}</b></span>
+            </div>
+            <div class="risk-lines">
+              <p v-for="line in stockRiskLines" :key="line">{{ line }}</p>
+            </div>
+            <div v-if="!isInstitutionView" class="detail-tools">
+              <p v-if="selectedStock === undefined" class="tool-hint">请先选择一只纳音票</p>
+              <div class="tool-grid">
+                <button
+                  v-for="item in retailToolButtons"
+                  :key="`detail-${item.toolType}`"
+                  type="button"
+                  :disabled="!canUseRetailTools"
+                  :class="{ active: selectedToolType === item.toolType }"
+                  @click="submitRetailToolAction(item.toolType)"
+                >
+                  {{ item.label }}
+                </button>
+              </div>
+              <div class="warning-grid">
+                <button
+                  v-for="item in warningDanmakuButtons"
+                  :key="`detail-${item.warningType}`"
+                  type="button"
+                  :disabled="!canUseRetailTools"
+                  :class="{ active: selectedWarningType === item.warningType }"
+                  @click="submitRetailToolAction('WARNING_DANMAKU', item.warningType)"
+                >
+                  预警弹幕 · {{ item.label }}
+                </button>
+              </div>
+            </div>
+          </section>
         </section>
 
         <section v-if="activeTab === 'home'" class="trade-console panel">
@@ -751,6 +952,7 @@ function signedNumber(value: number | undefined): string {
                 v-for="item in retailToolButtons"
                 :key="item.toolType"
                 type="button"
+                :disabled="!canUseRetailTools"
                 :class="{ active: selectedToolType === item.toolType }"
                 @click="submitRetailToolAction(item.toolType)"
               >
@@ -762,6 +964,7 @@ function signedNumber(value: number | undefined): string {
                 v-for="item in warningDanmakuButtons"
                 :key="item.warningType"
                 type="button"
+                :disabled="!canUseRetailTools"
                 :class="{ active: selectedWarningType === item.warningType }"
                 @click="submitRetailToolAction('WARNING_DANMAKU', item.warningType)"
               >
@@ -849,19 +1052,63 @@ function signedNumber(value: number | undefined): string {
 
         <section v-if="isInstitutionView" class="main-toolbox panel">
           <h3>主力坏水工具箱</h3>
-          <div>
-            <button type="button" @click="submitAction('intraday', 'DRAW_PIE')">
-              <Building2 :size="17" />
-              维护表情
-            </button>
-            <button type="button" @click="submitAction('intraday', 'IGNITE')">
-              <Activity :size="17" />
-              点火冒烟
-            </button>
-            <button type="button" @click="submitAction('intraday', 'SHIP')">
-              <ClipboardList :size="17" />
-              放点风声
-            </button>
+          <div class="institution-resource-grid">
+            <span>场内本金 <b>{{ Math.round(selfInstitutionState?.initialCapital ?? 0) }}</b></span>
+            <span>当前资产 <b>{{ Math.round(selfInstitutionState?.capital ?? 0) }}</b></span>
+            <span>ROI <b>{{ percent(selfInstitutionState?.roi) }}</b></span>
+            <span>调度资金 <b>{{ Math.round(selfInstitutionState?.managedCapital ?? 0) }}</b></span>
+            <span>
+              今日额度
+              <b>{{ Math.round(operationCreditLeft) }}/{{ Math.round(selfInstitutionState?.dailyOperationCredit ?? 0) }}</b>
+            </span>
+            <span>已用额度 <b>{{ Math.round(selfInstitutionState?.usedOperationCredit ?? 0) }}</b></span>
+            <span>
+              场外预算
+              <b>{{ Math.round(influenceBudgetLeft) }}/{{ Math.round(selfInstitutionState?.influenceBudget ?? 0) }}</b>
+            </span>
+            <span>已烧预算 <b>{{ Math.round(selfInstitutionState?.influenceSpent ?? 0) }}</b></span>
+            <span>
+              操盘点
+              <b>{{ selfInstitutionState?.controlPoints ?? 0 }}/{{ selfInstitutionState?.maxControlPoints ?? 0 }}</b>
+            </span>
+            <span>假消息 <b>{{ selfInstitutionState?.fakeNewsCount ?? 0 }}</b></span>
+          </div>
+          <p v-if="institutionToolHint" class="tool-hint">{{ institutionToolHint }}</p>
+
+          <div class="institution-action-group">
+            <h4>盘口操盘动作</h4>
+            <div class="institution-action-grid">
+              <button
+                v-for="item in institutionMarketActions"
+                :key="item.action"
+                type="button"
+                :disabled="!canUseMarketOperation"
+                :title="marketOperationHint"
+                @click="submitInstitutionMarketAction(item.action)"
+              >
+                <Activity :size="17" />
+                {{ item.label }}
+              </button>
+            </div>
+            <small v-if="marketOperationHint">{{ marketOperationHint }}</small>
+          </div>
+
+          <div class="institution-action-group">
+            <h4>场外操盘动作</h4>
+            <div class="institution-action-grid">
+              <button
+                v-for="item in offMarketActions"
+                :key="item.action"
+                type="button"
+                :disabled="!canUseOffMarketAction"
+                :title="offMarketActionHint"
+                @click="submitOffMarketAction(item.action)"
+              >
+                <Building2 :size="17" />
+                {{ item.label }}
+              </button>
+            </div>
+            <small v-if="offMarketActionHint">{{ offMarketActionHint }}</small>
           </div>
         </section>
 
@@ -906,7 +1153,8 @@ function signedNumber(value: number | undefined): string {
 
 <style scoped>
 .trade-pickers,
-.retail-toolbox {
+.retail-toolbox,
+.detail-tools {
   display: grid;
   gap: 10px;
   margin: 12px 0;
@@ -958,5 +1206,117 @@ function signedNumber(value: number | undefined): string {
 .stock-row.selectable:focus-visible {
   outline: 2px solid rgba(255, 216, 92, 0.9);
   outline-offset: 2px;
+}
+
+.stock-detail {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.detail-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.detail-title h3 {
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+
+.detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.detail-tags span {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.detail-tags span.risk {
+  border-color: rgba(255, 216, 92, 0.55);
+  background: rgba(255, 216, 92, 0.12);
+}
+
+.risk-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.risk-metrics span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+}
+
+.risk-lines {
+  display: grid;
+  gap: 6px;
+}
+
+.risk-lines p {
+  margin: 0;
+  color: rgba(255, 216, 92, 0.95);
+  font-size: 12px;
+}
+
+.institution-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+
+.institution-resource-grid span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+}
+
+.tool-hint,
+.institution-action-group small {
+  display: block;
+  color: rgba(255, 216, 92, 0.9);
+  font-size: 12px;
+}
+
+.institution-action-group {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.institution-action-group h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.institution-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.institution-action-grid button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
 }
 </style>
