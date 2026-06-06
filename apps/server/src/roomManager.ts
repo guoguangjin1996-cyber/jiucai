@@ -10,10 +10,8 @@ import {
   type GameRoomType,
   type MarketPhase,
   type QuantStrategy,
-  INITIAL_INSTITUTION_CAPITAL,
   INITIAL_RETAIL_CAPITAL,
   INITIAL_CONFIDENCE,
-  INITIAL_CONTROL_POINTS,
   INITIAL_FAKE_NEWS,
   calculateQuantAttention,
   applyLimitDownLock,
@@ -24,8 +22,10 @@ import {
   createLimitPrices,
   getRoomPhaseTiming,
   getRoomTypeConfig,
+  getInstitutionInitialResources,
   getRegulationState,
   resolveGameRoomType,
+  resetDailyOperationCredit,
   getOpenStatus,
   rankPlayersByROI,
   resolveChampion,
@@ -275,6 +275,7 @@ export class RoomManager {
     const room = this.getRoomOrThrow(roomId ?? session.roomId);
     const roomType = resolveGameRoomType(roomTypeOverride ?? room.roomType);
     const roomTypeConfig = getRoomTypeConfig(roomType);
+    const institutionInitialResources = getInstitutionInitialResources(roomType);
     if (session.playerId !== room.hostPlayerId) {
       throw new RoomError("HOST_ONLY", "只有房主可以开始游戏。");
     }
@@ -315,9 +316,9 @@ export class RoomManager {
     const assignedPlayers: RoomPlayer[] = players.map((player, index) => ({
       ...player,
       role: institutionIndexes.has(index) ? "institution" : "retail",
-      initialCapital: institutionIndexes.has(index) ? INITIAL_INSTITUTION_CAPITAL : INITIAL_RETAIL_CAPITAL,
-      finalCapital: institutionIndexes.has(index) ? INITIAL_INSTITUTION_CAPITAL : INITIAL_RETAIL_CAPITAL,
-      capital: institutionIndexes.has(index) ? INITIAL_INSTITUTION_CAPITAL : INITIAL_RETAIL_CAPITAL,
+      initialCapital: institutionIndexes.has(index) ? institutionInitialResources.initialCapital : INITIAL_RETAIL_CAPITAL,
+      finalCapital: institutionIndexes.has(index) ? institutionInitialResources.initialCapital : INITIAL_RETAIL_CAPITAL,
+      capital: institutionIndexes.has(index) ? institutionInitialResources.initialCapital : INITIAL_RETAIL_CAPITAL,
       roi: 0,
       positions: [],
       dailyActionCount: 0,
@@ -338,7 +339,7 @@ export class RoomManager {
       players: assignedPlayers,
       institution: {
         playerId: primaryInstitutionPlayer.id,
-        controlPoints: INITIAL_CONTROL_POINTS,
+        controlPoints: institutionInitialResources.maxControlPoints,
         fakeNewsCount: INITIAL_FAKE_NEWS,
         exposure: 0,
         harvestScore: 0,
@@ -347,7 +348,17 @@ export class RoomManager {
       },
       institutions: institutionPlayers.map((player) => ({
         playerId: player.id,
-        controlPoints: INITIAL_CONTROL_POINTS,
+        initialCapital: institutionInitialResources.initialCapital,
+        capital: institutionInitialResources.initialCapital,
+        finalCapital: institutionInitialResources.initialCapital,
+        roi: 0,
+        managedCapital: institutionInitialResources.managedCapital,
+        dailyOperationCredit: institutionInitialResources.dailyOperationCredit,
+        usedOperationCredit: 0,
+        influenceBudget: institutionInitialResources.influenceBudget,
+        influenceSpent: 0,
+        controlPoints: institutionInitialResources.maxControlPoints,
+        maxControlPoints: institutionInitialResources.maxControlPoints,
         fakeNewsCount: INITIAL_FAKE_NEWS,
         personalHarvestScore: 0,
         exposed: false,
@@ -448,9 +459,23 @@ export class RoomManager {
             };
           })
         : room.players;
+    const institutionInitialResources = getInstitutionInitialResources(room.roomType);
+    const institutions =
+      actualPhase === "PRE_NEWS" && previousDayEnded
+        ? room.institutions?.map((institution) => resetDailyOperationCredit(institution))
+        : room.institutions;
+    const institution =
+      actualPhase === "PRE_NEWS" && previousDayEnded && room.institution !== undefined
+        ? {
+            ...room.institution,
+            controlPoints: institutionInitialResources.maxControlPoints
+          }
+        : room.institution;
     const nextRoom: RoomSnapshot = {
       ...room,
       players,
+      ...(institution === undefined ? {} : { institution }),
+      ...(institutions === undefined ? {} : { institutions }),
       phase: actualPhase,
       day,
       submittedPlayerIds: [],
@@ -733,21 +758,13 @@ export class RoomManager {
 
     if (this.isIntradayAction(payload.action)) {
       return this.markPlayerSubmitted(
-        this.recordIntradayAction(room, player, payload.action, now),
+        this.recordIntradayAction(room, player, payload, now),
         player.id,
         this.countsAsDailyAction(payload)
       );
     }
 
-    const actionPayload: Record<string, string> = {
-      playerId: player.id,
-      actionType: payload.actionType,
-      action: payload.action
-    };
-
-    if (payload.targetPlayerId !== undefined) {
-      actionPayload.targetPlayerId = payload.targetPlayerId;
-    }
+    const actionPayload = this.createActionLogPayload(player, payload.actionType, payload.action, payload);
 
     const updatedRoom = this.updateRoom(room.id, {
       ...room,
@@ -1096,6 +1113,30 @@ export class RoomManager {
     };
   }
 
+  private createActionLogPayload(
+    player: RoomPlayer,
+    actionType: string,
+    action: string,
+    payload?: SubmitActionPayload,
+    extra?: Record<string, unknown>
+  ): Record<string, unknown> {
+    const actionPayload: Record<string, unknown> = {
+      playerId: player.id,
+      actionType,
+      action,
+      ...(extra ?? {})
+    };
+
+    if (payload?.targetPlayerId !== undefined) actionPayload.targetPlayerId = payload.targetPlayerId;
+    if (payload?.stockId !== undefined) actionPayload.stockId = payload.stockId;
+    if (payload?.amountLevel !== undefined) actionPayload.amountLevel = payload.amountLevel;
+    if (payload?.orderAmount !== undefined) actionPayload.orderAmount = payload.orderAmount;
+    if (payload?.toolType !== undefined) actionPayload.toolType = payload.toolType;
+    if (payload?.warningType !== undefined) actionPayload.warningType = payload.warningType;
+
+    return actionPayload;
+  }
+
   private createVoiceLineForPhase(
     phase: MarketPhase,
     day: number,
@@ -1264,9 +1305,10 @@ export class RoomManager {
   private recordIntradayAction(
     room: RoomSnapshot,
     player: RoomPlayer,
-    action: IntradayChoice | InstitutionIntradayAction,
+    payload: SubmitActionPayload,
     timestamp: number
   ): RoomSnapshot {
+    const action = payload.action as IntradayChoice | InstitutionIntradayAction;
     if (
       room.phase !== "CONTINUOUS_TRADING" &&
       room.phase !== "MORNING_TRADING" &&
@@ -1282,7 +1324,7 @@ export class RoomManager {
       }
 
       if (action === "RUN_AWAY") {
-        return this.recordRunAwayAction(room, player, timestamp);
+        return this.recordRunAwayAction(room, player, timestamp, payload);
       }
 
       const updatedPlayers = room.players.map((candidate) =>
@@ -1291,7 +1333,8 @@ export class RoomManager {
       return this.commitIntradayRoom(room, updatedPlayers, room.market, room.institutionIntradayActions, {
         timestamp,
         player,
-        action
+        action,
+        payload
       });
     }
 
@@ -1306,7 +1349,8 @@ export class RoomManager {
     return this.commitIntradayRoom(room, room.players, updatedMarket, updatedActions, {
       timestamp,
       player,
-      action
+      action,
+      payload
     });
   }
 
@@ -1350,7 +1394,8 @@ export class RoomManager {
   private recordRunAwayAction(
     room: RoomSnapshot,
     player: RoomPlayer,
-    timestamp: number
+    timestamp: number,
+    payload?: SubmitActionPayload
   ): RoomSnapshot {
     if (!player.position.hasPosition) {
       throw new RoomError("POSITION_NOT_SELLABLE", "当前没有可卖持仓，不能跑路。");
@@ -1362,10 +1407,9 @@ export class RoomManager {
         timestamp,
         type: "position:t1Locked",
         message: "你想跑，但T+1说：明天再说。",
-        payload: {
-          playerId: player.id,
+        payload: this.createActionLogPayload(player, "intraday", "RUN_AWAY", payload, {
           lockedReason: player.position.lockedReason ?? "T+1"
-        }
+        })
       });
       return this.cloneRoom({
         ...updatedRoom,
@@ -1390,11 +1434,10 @@ export class RoomManager {
         timestamp,
         type: failed ? "position:limitDownSellFailed" : "position:limitDownSellQueued",
         message: failed ? "跌停了，门在那边，但现在打不开。" : "跌停排队成功，卖出仍在等待成交。",
-        payload: {
-          playerId: player.id,
+        payload: this.createActionLogPayload(player, "intraday", "RUN_AWAY", payload, {
           failed,
           lockedReason: "limit_down"
-        }
+        })
       });
       return this.cloneRoom({
         ...updatedRoom,
@@ -1415,9 +1458,7 @@ export class RoomManager {
       timestamp,
       type: "position:sold",
       message: `${player.nickname} 成功跑路。`,
-      payload: {
-        playerId: player.id
-      }
+      payload: this.createActionLogPayload(player, "intraday", "RUN_AWAY", payload)
     });
   }
 
@@ -1458,6 +1499,7 @@ export class RoomManager {
       timestamp: number;
       player: RoomPlayer;
       action: string;
+      payload?: SubmitActionPayload;
     }
   ): RoomSnapshot {
     const updatedRoom = this.updateRoom(room.id, {
@@ -1473,11 +1515,7 @@ export class RoomManager {
           phase: room.phase,
           type: "player:action",
           message: `${logInput.player.nickname} 提交盘中动作 ${logInput.action}。`,
-          payload: {
-            playerId: logInput.player.id,
-            actionType: "intraday",
-            action: logInput.action
-          }
+          payload: this.createActionLogPayload(logInput.player, "intraday", logInput.action, logInput.payload)
         })
       ],
       updatedAt: logInput.timestamp
@@ -1515,12 +1553,9 @@ export class RoomManager {
           phase: room.phase,
           type: "player:action",
           message: `${player.nickname} 提交集合竞价动作 ${payload.action}。`,
-          payload: {
-            playerId: player.id,
-            actionType: payload.actionType,
-            action: payload.action,
+          payload: this.createActionLogPayload(player, payload.actionType, payload.action, payload, {
             order
-          }
+          })
         })
       ],
       updatedAt: timestamp

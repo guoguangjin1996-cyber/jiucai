@@ -2,6 +2,8 @@ import type {
   ElementSectorState,
   ElementType,
   MarketRankings,
+  DanmakuPowerMetrics,
+  RetailWarningDanmakuType,
   SectorStatusTag,
   StockMarketState,
   StockPopularityMetrics,
@@ -33,6 +35,21 @@ export interface RiskScoreInput {
   tailRisk: number;
 }
 
+export interface DanmakuPowerInput {
+  stockId: string;
+  danmakuHeat: number;
+  riskWarningCount?: number;
+  fakeOrderCalloutCount?: number;
+  tPlusOneWarningCount?: number;
+  quantWarningCount?: number;
+  coreDiveWarningCount?: number;
+  hypeCount?: number;
+  repeatHypeCount?: number;
+  fakeWarningCount?: number;
+  warningType?: RetailWarningDanmakuType;
+  noisePower?: number;
+}
+
 export function calculatePopularityScore(input: PopularityScoreInput): number {
   return roundScore(
     input.danmakuHeat * 0.3 +
@@ -62,6 +79,55 @@ export function calculateRiskScore(input: RiskScoreInput): number {
       input.lowLiquidityRisk * 0.15 +
       input.tailRisk * 0.1
   );
+}
+
+export function calculateDanmakuPowerMetrics(input: DanmakuPowerInput): DanmakuPowerMetrics {
+  const warningBoost = warningTypeCountBoost(input.warningType);
+  const riskWarningCount = (input.riskWarningCount ?? 0) + (input.warningType === "WARN_RISK" ? warningBoost : 0);
+  const fakeOrderCalloutCount =
+    (input.fakeOrderCalloutCount ?? 0) + (input.warningType === "CALLOUT_FAKE_ORDER" ? warningBoost : 0);
+  const tPlusOneWarningCount =
+    (input.tPlusOneWarningCount ?? 0) + (input.warningType === "WARN_T_PLUS_ONE" ? warningBoost : 0);
+  const quantWarningCount = (input.quantWarningCount ?? 0) + (input.warningType === "WARN_QUANT" ? warningBoost : 0);
+  const coreDiveWarningCount =
+    (input.coreDiveWarningCount ?? 0) + (input.warningType === "WARN_CORE_DIVE" ? warningBoost : 0);
+  const hypeCount = (input.hypeCount ?? 0) + (input.warningType === "QUESTION_HYPE" ? warningBoost : 0);
+  const repeatHypeCount = input.repeatHypeCount ?? 0;
+  const fakeWarningCount = input.fakeWarningCount ?? 0;
+  const riskWarningScore = clampScore(riskWarningCount * 12);
+  const fakeOrderCalloutScore = clampScore(fakeOrderCalloutCount * 14);
+  const tPlusOneWarningScore = clampScore(tPlusOneWarningCount * 12);
+  const quantWarningScore = clampScore(quantWarningCount * 12);
+  const coreDiveWarningScore = clampScore(coreDiveWarningCount * 12);
+  const retailWarningPower = roundScore(
+    riskWarningScore * 0.3 +
+      fakeOrderCalloutScore * 0.25 +
+      tPlusOneWarningScore * 0.2 +
+      quantWarningScore * 0.15 +
+      coreDiveWarningScore * 0.1
+  );
+  const mainForceHypePower = roundScore(clampScore(hypeCount * 12 + repeatHypeCount * 8));
+  const noisePower = roundScore(clampScore(input.noisePower ?? fakeWarningCount * 10));
+  const netDanmakuEffect = roundScore(
+    clampScore(input.danmakuHeat) - retailWarningPower * 0.6 + mainForceHypePower * 0.4 + noisePower * 0.2
+  );
+
+  return {
+    stockId: input.stockId,
+    danmakuHeat: clampScore(input.danmakuHeat),
+    retailWarningPower,
+    mainForceHypePower,
+    noisePower,
+    riskWarningCount,
+    fakeOrderCalloutCount,
+    tPlusOneWarningCount,
+    quantWarningCount,
+    coreDiveWarningCount,
+    hypeCount,
+    repeatHypeCount,
+    fakeWarningCount,
+    netDanmakuEffect
+  };
 }
 
 export function calculateQuantAttention(params: {
@@ -274,4 +340,13 @@ function sortByScore<T>(items: T[], score: (item: T) => number): T[] {
 
 function roundScore(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function clampScore(value: number): number {
+  if (Number.isNaN(value)) return 0;
+  return Math.min(Math.max(value, 0), 100);
+}
+
+function warningTypeCountBoost(warningType: RetailWarningDanmakuType | undefined): number {
+  return warningType === undefined ? 0 : 1;
 }

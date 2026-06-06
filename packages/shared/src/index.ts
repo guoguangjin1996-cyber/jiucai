@@ -6,6 +6,7 @@ export * from "./game/winCondition";
 export * from "./learning";
 export * from "./market";
 export * from "./resultExplanation";
+export * from "./retailTools";
 export * from "./roomTypes";
 export * from "./types";
 export * from "./voiceLines";

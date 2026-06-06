@@ -5,9 +5,13 @@ import {
   calculateRiskScore,
   createFullMarketSectors,
   ELEMENT_SECTOR_TEMPLATES,
+  getRoomTypeConfig,
   getNayinStockTemplates,
   getStockCardTags,
   hasForbiddenRealMarketText,
+  INSTITUTION_COUNT,
+  MAX_PLAYERS,
+  RETAIL_COUNT,
   rankPlayersByROI,
   resolveChampion,
   resolveMarketRankings,
@@ -71,6 +75,44 @@ function player(id: string, role: "institution" | "retail", initialCapital: numb
 }
 
 describe("five-element full-market data system", () => {
+  it("calibrates QUICK_10 to 8 players, 2 institutions, and 6 retail players", () => {
+    expect(getRoomTypeConfig("QUICK_10")).toMatchObject({
+      maxPlayers: 8,
+      institutionCount: 2,
+      retailCount: 6,
+      maxDays: 3,
+      stockPoolMode: "NINE_STOCKS"
+    });
+  });
+
+  it("calibrates STANDARD_20 to 12 players, 2 institutions, and 10 retail players", () => {
+    expect(getRoomTypeConfig("STANDARD_20")).toMatchObject({
+      maxPlayers: 12,
+      institutionCount: 2,
+      retailCount: 10,
+      maxDays: 5,
+      stockPoolMode: "FULL_MARKET"
+    });
+  });
+
+  it("calibrates LONG_30 to 16 players, 3 institutions, and 13 retail players", () => {
+    expect(getRoomTypeConfig("LONG_30")).toMatchObject({
+      maxPlayers: 16,
+      institutionCount: 3,
+      retailCount: 13,
+      maxDays: 7,
+      stockPoolMode: "FULL_MARKET"
+    });
+  });
+
+  it("keeps legacy constants as compatibility defaults instead of room type sources", () => {
+    expect(MAX_PLAYERS).toBe(8);
+    expect(INSTITUTION_COUNT).toBe(2);
+    expect(RETAIL_COUNT).toBe(6);
+    expect(getRoomTypeConfig("LONG_30").maxPlayers).not.toBe(MAX_PLAYERS);
+    expect(getRoomTypeConfig("STANDARD_20").retailCount).not.toBe(RETAIL_COUNT);
+  });
+
   it("contains 5 element sectors, 30 Nayin stocks, and 6 stocks per sector", () => {
     expect(ELEMENT_SECTOR_TEMPLATES).toHaveLength(5);
     expect(getNayinStockTemplates()).toHaveLength(30);

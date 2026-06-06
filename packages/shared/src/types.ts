@@ -113,6 +113,14 @@ export type DanmakuSource = "player" | "bot" | "institution" | "system";
 
 export type DanmakuSentiment = "bullish" | "bearish" | "suspicious" | "panic" | "neutral";
 
+export type RetailWarningDanmakuType =
+  | "WARN_RISK"
+  | "CALLOUT_FAKE_ORDER"
+  | "WARN_T_PLUS_ONE"
+  | "WARN_QUANT"
+  | "WARN_CORE_DIVE"
+  | "QUESTION_HYPE";
+
 export interface PositionState {
   stockId?: string;
   stockName?: string;
@@ -174,7 +182,17 @@ export interface InstitutionState {
 
 export interface InstitutionPlayerState {
   playerId: string;
+  initialCapital: number;
+  capital: number;
+  finalCapital: number;
+  roi: number;
+  managedCapital: number;
+  dailyOperationCredit: number;
+  usedOperationCredit: number;
+  influenceBudget: number;
+  influenceSpent: number;
   controlPoints: number;
+  maxControlPoints: number;
   fakeNewsCount: number;
   personalHarvestScore: number;
   exposed: boolean;
@@ -224,10 +242,33 @@ export interface StockMarketState {
   isLimitDown: boolean;
   boardStrength: number;
   boardBreakRisk: number;
+  overheatRisk?: number;
+  riskFlags?: string[];
+  nextDayLowOpenRisk?: number;
+  retailWarningPower?: number;
+  mainForceHypePower?: number;
+  noisePower?: number;
   liquidityProfile?: {
     dailyLiquidity: number;
   };
   tags: StockTag[];
+}
+
+export interface DanmakuPowerMetrics {
+  stockId: string;
+  danmakuHeat: number;
+  retailWarningPower: number;
+  mainForceHypePower: number;
+  noisePower: number;
+  riskWarningCount: number;
+  fakeOrderCalloutCount: number;
+  tPlusOneWarningCount: number;
+  quantWarningCount: number;
+  coreDiveWarningCount: number;
+  hypeCount: number;
+  repeatHypeCount: number;
+  fakeWarningCount: number;
+  netDanmakuEffect: number;
 }
 
 export interface OrderBookLiquidity {

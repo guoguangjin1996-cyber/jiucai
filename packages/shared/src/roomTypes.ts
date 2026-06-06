@@ -1,5 +1,6 @@
 import type {
   GameRoomType,
+  InstitutionPlayerState,
   MarketPhase,
   QuantLevel,
   RegulationIntensity,
@@ -42,6 +43,14 @@ export interface PhaseTimingConfig {
   minimumPhaseHoldSec?: number;
 }
 
+export interface InstitutionInitialResources {
+  initialCapital: number;
+  managedCapital: number;
+  dailyOperationCredit: number;
+  influenceBudget: number;
+  maxControlPoints: number;
+}
+
 export const ROOM_TYPE_CONFIGS: Record<GameRoomType, GameRoomTypeConfig> = {
   QUICK_10: {
     roomType: "QUICK_10",
@@ -72,9 +81,9 @@ export const ROOM_TYPE_CONFIGS: Record<GameRoomType, GameRoomTypeConfig> = {
     roomType: "STANDARD_20",
     displayName: "五日轮动房",
     targetDurationMinutes: 20,
-    maxPlayers: 8,
+    maxPlayers: 12,
     institutionCount: 2,
-    retailCount: 6,
+    retailCount: 10,
     stockPoolMode: "FULL_MARKET",
     maxPositionsPerPlayer: 3,
     maxDailyActionsPerPlayer: 3,
@@ -97,9 +106,9 @@ export const ROOM_TYPE_CONFIGS: Record<GameRoomType, GameRoomTypeConfig> = {
     roomType: "LONG_30",
     displayName: "全市场长盘房",
     targetDurationMinutes: 30,
-    maxPlayers: 8,
-    institutionCount: 2,
-    retailCount: 6,
+    maxPlayers: 16,
+    institutionCount: 3,
+    retailCount: 13,
     stockPoolMode: "FULL_MARKET",
     maxPositionsPerPlayer: 4,
     maxDailyActionsPerPlayer: 4,
@@ -117,6 +126,30 @@ export const ROOM_TYPE_CONFIGS: Record<GameRoomType, GameRoomTypeConfig> = {
     regulationIntensity: "enhanced",
     speedLabel: "约80倍速",
     suitableFor: "好友开黑 / 高阶博弈"
+  }
+};
+
+export const INSTITUTION_INITIAL_RESOURCES: Record<GameRoomType, InstitutionInitialResources> = {
+  QUICK_10: {
+    initialCapital: 800,
+    managedCapital: 12000,
+    dailyOperationCredit: 3000,
+    influenceBudget: 80,
+    maxControlPoints: 4
+  },
+  STANDARD_20: {
+    initialCapital: 1000,
+    managedCapital: 20000,
+    dailyOperationCredit: 5000,
+    influenceBudget: 120,
+    maxControlPoints: 5
+  },
+  LONG_30: {
+    initialCapital: 1200,
+    managedCapital: 30000,
+    dailyOperationCredit: 7000,
+    influenceBudget: 160,
+    maxControlPoints: 6
   }
 };
 
@@ -218,6 +251,20 @@ export const ROOM_PHASE_SECONDS: Record<GameRoomType, Partial<Record<MarketPhase
 
 export function getRoomTypeConfig(roomType: GameRoomType = DEFAULT_GAME_ROOM_TYPE): GameRoomTypeConfig {
   return ROOM_TYPE_CONFIGS[roomType];
+}
+
+export function getInstitutionInitialResources(
+  roomType: GameRoomType = DEFAULT_GAME_ROOM_TYPE
+): InstitutionInitialResources {
+  return INSTITUTION_INITIAL_RESOURCES[roomType];
+}
+
+export function resetDailyOperationCredit(institution: InstitutionPlayerState): InstitutionPlayerState {
+  return {
+    ...institution,
+    usedOperationCredit: 0,
+    controlPoints: institution.maxControlPoints
+  };
 }
 
 export function getGameRoomTypeConfig(roomType: GameRoomType = DEFAULT_GAME_ROOM_TYPE): GameRoomTypeConfig {
