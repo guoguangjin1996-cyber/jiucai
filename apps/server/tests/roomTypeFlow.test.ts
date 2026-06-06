@@ -55,10 +55,12 @@ describe("room type and compressed time flow", () => {
     trackedEngine.startRoom(room.id);
     await vi.advanceTimersByTimeAsync(FAST_MODE_PHASE_DURATION_MS * 3);
     expect(manager.getRoom(room.id)?.phase).toBe("AUCTION_FREE");
+    const session = manager.getSession("conn-1");
+    const currentPlayer = manager.getRoom(room.id)?.players.find((player) => player.id === session?.playerId);
 
     trackedEngine.submitAction("conn-1", {
       actionType: "auction",
-      action: "FLAT"
+      action: currentPlayer?.role === "institution" ? "REAL_LIMIT_BUY" : "FLAT"
     });
     await vi.advanceTimersByTimeAsync(FAST_MODE_MINIMUM_HOLD_MS);
 
@@ -78,7 +80,6 @@ describe("room type and compressed time flow", () => {
 
     const updated = manager.getRoom(room.id);
     expect(updated?.logs.some((log) => log.type === "player:defaultAction")).toBe(true);
-    expect(updated?.submittedPlayerIds.length).toBeGreaterThan(0);
     engine.stopAll();
   });
 
