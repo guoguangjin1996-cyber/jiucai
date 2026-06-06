@@ -49,7 +49,16 @@ declare module "cc" {
 
   export class Sprite {
     color: Color;
+    spriteFrame: SpriteFrame | null;
   }
+
+  export class SpriteFrame {
+    texture: Texture2D | null;
+  }
+
+  export class Texture2D {}
+
+  export class ImageAsset {}
 
   export class Label {
     string: string;
@@ -106,5 +115,8 @@ declare module "cc" {
     stroke(): void;
     fill(): void;
   }
-}
 
+  export const resources: {
+    load<T>(path: string, type: new () => T, callback: (error: Error | null, asset: T | null) => void): void;
+  };
+}

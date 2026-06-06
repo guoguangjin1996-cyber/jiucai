@@ -3,9 +3,16 @@ export type MockRole = "retail" | "institution";
 export type MockPhase =
   | "PRE_NEWS"
   | "MUTATION"
+  | "INSTITUTION_PRIVATE_ROOM"
   | "AUCTION_FREE"
   | "AUCTION_LOCKED"
   | "OPEN_PRICE"
+  | "MORNING_TRADING"
+  | "MIDDAY_ROTATION"
+  | "AFTERNOON_TRADING"
+  | "CLOSING_RUSH"
+  | "FOCUS_VOTE"
+  | "DAY_RECAP"
   | "CONTINUOUS_TRADING"
   | "LIMIT_BOARD"
   | "CLOSE"
@@ -67,6 +74,27 @@ export interface MockGameState {
   logs: string[];
 }
 
+export interface MockOrderBookViewModel {
+  stockId: string;
+  stockName: string;
+  buyDepth: number;
+  sellDepth: number;
+  liquidityLabel: "高" | "中" | "低";
+  fillRateBuy: number;
+  fillRateSell: number;
+  queueLabel?: string;
+  riskTags: string[];
+}
+
+export interface MockOrderFillViewModel {
+  status: "filled" | "partial" | "unfilled";
+  requestedAmount: number;
+  filledAmount: number;
+  unfilledAmount: number;
+  avgFillPrice: number;
+  reasonText?: string;
+}
+
 export type PageKey =
   | "BUY"
   | "SELL"
@@ -97,4 +125,3 @@ export type PageKey =
   | "KOL_COOPERATION"
   | "REGULATOR_RELATION"
   | "BLACK_ROOM_RECORD";
-

@@ -751,7 +751,7 @@
           <p style="text-align:center;font-weight:800;">8人同局，2名主力，6棵韭菜，最终按 ROI 排名</p>
           <div class="mascot-scene"><div class="speech left">又想割我？没门！</div><div class="k-monster"></div><div class="speech right">冲鸭！</div><div class="grass"></div></div>
           <div class="stack">${btn("快速开局", "red", "game")}${btn("创建房间", "green", "room")}${btn("玩法说明", "blue", "help")}</div>
-          <div class="disclaimer">虚构娱乐模拟，不构成投资建议；所有本金值、操盘点均无现金价值。</div>
+          <div class="disclaimer">虚构娱乐模拟，不提供真实交易指引；所有本金值、操盘点均无现金价值。</div>
         </section>`;
         renderWorkspace();
       }
@@ -816,7 +816,7 @@
           <div class="card preview"><h3>主力 7 大工具</h3><div class="stack">${pageBtn("资金操控", "purple", "MAIN_FORCE_FUND_CONTROL")}${pageBtn("筹码分布", "purple", "CHIP_DISTRIBUTION")}${pageBtn("涨停控制", "purple", "LIMIT_CONTROL")}${pageBtn("消息发布", "purple", "MESSAGE_PUBLISH")}${pageBtn("大V合作", "purple", "KOL_COOPERATION")}${pageBtn("监管关系", "purple", "REGULATOR_RELATION")}${pageBtn("小黑屋记录", "purple", "BLACK_ROOM_RECORD")}</div></div>
           <div class="card preview"><h3>ROI 玩家收益榜</h3>${state.players.map((p, i) => `<div class="order-row"><span>${i + 1}. ${p[0]}</span><strong class="${p[2].startsWith("+") ? "profit" : "loss"}">${p[2]}</strong></div>`).join("")}</div>
           <div class="card preview"><h3>盘面弹幕</h3>${state.bullets.map((x) => `<p>• ${x}</p>`).join("")}<div class="bar"><span style="width:76%"></span></div><p>监管热度 76%</p></div>
-          <div class="card preview"><h3>合规说明</h3><p>不接真实行情，不使用真实股票代码或真实上市公司名称，不提供投资建议。</p><p>本金值、操盘点、收割值均无现金价值。</p></div>
+          <div class="card preview"><h3>合规说明</h3><p>不接真实行情，不使用真实股票代码或真实上市公司名称，不提供真实交易指引。</p><p>本金值、操盘点、收割值均无现金价值。</p></div>
         `;
       }
 
@@ -831,7 +831,7 @@
             <div class="cute-panel">${boss ? '<div class="boss-figure"></div>' : '<div class="tiny-leek logo-leek"><div class="leek-body cry-face"><span></span></div></div>'}</div>
             ${pageDetail(key)}
             <div class="row" style="margin-top:12px;"><button class="jelly soft" data-close="1">再想想</button><button class="jelly ${color}" data-close="1">${action}</button></div>
-            <div class="disclaimer">虚构娱乐模拟，不构成投资建议。</div>
+            <div class="disclaimer">虚构娱乐模拟，不提供真实交易指引。</div>
           </div>`;
         modalLayer.classList.add("active");
       }

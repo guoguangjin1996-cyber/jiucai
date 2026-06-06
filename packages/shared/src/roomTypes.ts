@@ -2,10 +2,24 @@ import type {
   GameRoomType,
   MarketPhase,
   QuantLevel,
-  RegulationIntensity
+  RegulationIntensity,
+  RoomMarketStrength,
+  StockPoolMode
 } from "./types";
 
 export interface GameRoomTypeConfig {
+  roomType: GameRoomType;
+  displayName: string;
+  targetDurationMinutes: number;
+  maxPlayers: number;
+  institutionCount: number;
+  retailCount: number;
+  stockPoolMode: StockPoolMode;
+  maxPositionsPerPlayer: number;
+  maxDailyActionsPerPlayer: number;
+  quantStrength: RoomMarketStrength;
+  regulationStrength: RoomMarketStrength;
+  // Backward-compatible aliases used by existing client/server view models.
   type: GameRoomType;
   name: string;
   targetMinutes: number;
@@ -30,6 +44,17 @@ export interface PhaseTimingConfig {
 
 export const ROOM_TYPE_CONFIGS: Record<GameRoomType, GameRoomTypeConfig> = {
   QUICK_10: {
+    roomType: "QUICK_10",
+    displayName: "短线快跑房",
+    targetDurationMinutes: 10,
+    maxPlayers: 8,
+    institutionCount: 2,
+    retailCount: 6,
+    stockPoolMode: "NINE_STOCKS",
+    maxPositionsPerPlayer: 2,
+    maxDailyActionsPerPlayer: 2,
+    quantStrength: "weak",
+    regulationStrength: "weak",
     type: "QUICK_10",
     name: "短线快跑房",
     targetMinutes: 10,
@@ -44,6 +69,17 @@ export const ROOM_TYPE_CONFIGS: Record<GameRoomType, GameRoomTypeConfig> = {
     suitableFor: "试一把就跑"
   },
   STANDARD_20: {
+    roomType: "STANDARD_20",
+    displayName: "五日轮动房",
+    targetDurationMinutes: 20,
+    maxPlayers: 8,
+    institutionCount: 2,
+    retailCount: 6,
+    stockPoolMode: "FULL_MARKET",
+    maxPositionsPerPlayer: 3,
+    maxDailyActionsPerPlayer: 3,
+    quantStrength: "standard",
+    regulationStrength: "standard",
     type: "STANDARD_20",
     name: "五日轮动房",
     targetMinutes: 20,
@@ -58,6 +94,17 @@ export const ROOM_TYPE_CONFIGS: Record<GameRoomType, GameRoomTypeConfig> = {
     suitableFor: "标准主模式"
   },
   LONG_30: {
+    roomType: "LONG_30",
+    displayName: "全市场长盘房",
+    targetDurationMinutes: 30,
+    maxPlayers: 8,
+    institutionCount: 2,
+    retailCount: 6,
+    stockPoolMode: "FULL_MARKET",
+    maxPositionsPerPlayer: 4,
+    maxDailyActionsPerPlayer: 4,
+    quantStrength: "strong",
+    regulationStrength: "strong",
     type: "LONG_30",
     name: "全市场长盘房",
     targetMinutes: 30,
@@ -104,6 +151,7 @@ export const SUBMISSION_PHASES: readonly MarketPhase[] = [
   "MORNING_TRADING",
   "AFTERNOON_TRADING",
   "CLOSING_RUSH",
+  "REGULATION_INQUIRY",
   "FOCUS_VOTE"
 ];
 

@@ -10,6 +10,10 @@ export type QuantLevel = "simplified" | "standard" | "enhanced";
 
 export type RegulationIntensity = "weakened" | "standard" | "enhanced";
 
+export type StockPoolMode = "NINE_STOCKS" | "FULL_MARKET";
+
+export type RoomMarketStrength = "weak" | "standard" | "strong";
+
 export type NayinPersonality =
   | "潜伏"
   | "龙头"
@@ -117,6 +121,8 @@ export interface PositionState {
   buyDay?: number;
   costPrice?: number;
   currentPrice?: number;
+  amount?: number;
+  realizedProfit?: number;
   amountLevel: PositionAmountLevel;
   sellable: boolean;
   lockedReason?: PositionLockedReason;
@@ -218,7 +224,75 @@ export interface StockMarketState {
   isLimitDown: boolean;
   boardStrength: number;
   boardBreakRisk: number;
+  liquidityProfile?: {
+    dailyLiquidity: number;
+  };
   tags: StockTag[];
+}
+
+export interface OrderBookLiquidity {
+  stockId: string;
+  buyDepth: number;
+  sellDepth: number;
+  baseBuyDepth: number;
+  baseSellDepth: number;
+  liquidity: number;
+  crowdedness: number;
+  fillRateBuy: number;
+  fillRateSell: number;
+  lastUpdatedDay: number;
+}
+
+export interface OrderRequest {
+  playerId: string;
+  stockId: string;
+  side: "buy" | "sell";
+  amount: number;
+  orderType: "market" | "limit";
+  phase: MarketPhase;
+}
+
+export interface OrderFillResult {
+  playerId: string;
+  stockId: string;
+  side: "buy" | "sell";
+  requestedAmount: number;
+  filledAmount: number;
+  unfilledAmount: number;
+  fillRate: number;
+  avgFillPrice: number;
+  status: "filled" | "partial" | "unfilled";
+  reason?:
+    | "limit_up_queue"
+    | "limit_down_queue"
+    | "low_liquidity"
+    | "suspended"
+    | "quant_drain"
+    | "t_plus_one_locked"
+    | "position_limit"
+    | "daily_action_limit"
+    | "insufficient_capital";
+}
+
+export interface OrderBookViewModel {
+  stockId: string;
+  stockName: string;
+  buyDepth: number;
+  sellDepth: number;
+  liquidityLabel: "高" | "中" | "低";
+  fillRateBuy: number;
+  fillRateSell: number;
+  queueLabel?: string;
+  riskTags: string[];
+}
+
+export interface OrderFillViewModel {
+  status: "filled" | "partial" | "unfilled";
+  requestedAmount: number;
+  filledAmount: number;
+  unfilledAmount: number;
+  avgFillPrice: number;
+  reasonText?: string;
 }
 
 export interface ElementSectorState {
@@ -306,6 +380,7 @@ export interface MarketState {
   sectors?: ElementSectorState[];
   rankings?: MarketRankings;
   quant?: QuantState;
+  orderBooks?: Record<string, OrderBookLiquidity>;
 }
 
 export interface DanmakuItem {

@@ -1,4 +1,4 @@
-import { pickVoiceLine, type VoiceLineEvent } from "@jiucai-defense/shared";
+import { pickVoiceLine, type VoiceLineEvent } from "../store/LocalShared";
 
 export class VoiceLineManager {
   private counter = 0;

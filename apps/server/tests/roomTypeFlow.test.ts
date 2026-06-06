@@ -18,6 +18,9 @@ describe("room type and compressed time flow", () => {
 
     const quickLobby = manager.createRoom("quick", "快跑", "QUICK_10");
     const quick = manager.startGame("quick", quickLobby.id);
+    expect(quick.players).toHaveLength(8);
+    expect(quick.players.filter((player) => player.role === "institution")).toHaveLength(2);
+    expect(quick.players.filter((player) => player.role === "retail")).toHaveLength(6);
     expect(quick.maxDays).toBe(3);
     expect(quick.market?.sectors?.flatMap((sector) => sector.stocks)).toHaveLength(9);
     expect(quick.maxPositions).toBe(2);
@@ -26,6 +29,9 @@ describe("room type and compressed time flow", () => {
 
     const standardLobby = manager.createRoom("standard", "标准", "STANDARD_20");
     const standard = manager.startGame("standard", standardLobby.id);
+    expect(standard.players).toHaveLength(8);
+    expect(standard.players.filter((player) => player.role === "institution")).toHaveLength(2);
+    expect(standard.players.filter((player) => player.role === "retail")).toHaveLength(6);
     expect(standard.maxDays).toBe(5);
     expect(standard.market?.sectors?.flatMap((sector) => sector.stocks)).toHaveLength(30);
     expect(standard.maxPositions).toBe(3);
@@ -33,6 +39,9 @@ describe("room type and compressed time flow", () => {
 
     const longLobby = manager.createRoom("long", "长盘", "LONG_30");
     const long = manager.startGame("long", longLobby.id);
+    expect(long.players).toHaveLength(8);
+    expect(long.players.filter((player) => player.role === "institution")).toHaveLength(2);
+    expect(long.players.filter((player) => player.role === "retail")).toHaveLength(6);
     expect(long.maxDays).toBe(7);
     expect(long.market?.sectors?.flatMap((sector) => sector.stocks)).toHaveLength(30);
     expect(long.maxPositions).toBe(4);
@@ -99,6 +108,74 @@ describe("room type and compressed time flow", () => {
     const finished = manager.getRoom(room.id);
     expect(finished?.status).toBe("finished");
     expect(finished?.finalSettlement?.championPlayerId).toBeDefined();
+    engine.stopAll();
+  });
+
+  it("enforces room-type daily action limits", () => {
+    const manager = new RoomManager(() => 0);
+    const lobby = manager.createRoom("conn-1", "房主", "QUICK_10");
+    manager.joinRoom("conn-2", lobby.id, "散户2");
+    const room = manager.startGame("conn-1", lobby.id);
+
+    manager.transitionPhase(room.id, "AUCTION_FREE");
+    manager.recordPlayerAction("conn-2", { actionType: "auction", action: "FLAT" });
+    manager.transitionPhase(room.id, "AUCTION_LOCKED");
+    manager.recordPlayerAction("conn-2", { actionType: "auction", action: "FLAT" });
+    manager.transitionPhase(room.id, "MORNING_TRADING");
+
+    expect(() =>
+      manager.recordPlayerAction("conn-2", { actionType: "intraday", action: "TAKE_OFF" })
+    ).toThrow("今日主动操作次数已用完");
+  });
+
+  it("refreshes market rankings and quant target during intraday phases", () => {
+    const manager = new RoomManager(() => 0);
+    const lobby = manager.createRoom("conn-1", "房主", "STANDARD_20");
+    manager.joinRoom("conn-2", lobby.id, "散户2");
+    const room = manager.startGame("conn-1", lobby.id);
+
+    manager.transitionPhase(room.id, "MORNING_TRADING");
+    manager.recordPlayerAction("conn-2", { actionType: "intraday", action: "TAKE_OFF" });
+    const refreshed = manager.settlePhase(room.id, "MORNING_TRADING");
+
+    expect(refreshed.market?.rankings?.stockPopularityRank.length).toBeGreaterThan(0);
+    expect(refreshed.market?.quant?.targetStockId).toBeDefined();
+    expect(refreshed.logs.some((log) => log.type === "market:refresh")).toBe(true);
+  });
+
+  it("stores bought stock positions after an up close", () => {
+    const manager = new RoomManager(() => 1);
+    const lobby = manager.createRoom("conn-1", "房主", "STANDARD_20");
+    manager.joinRoom("conn-2", lobby.id, "散户2");
+    const room = manager.startGame("conn-1", lobby.id);
+
+    manager.transitionPhase(room.id, "MORNING_TRADING");
+    manager.recordPlayerAction("conn-2", { actionType: "intraday", action: "TAKE_OFF" });
+    manager.transitionPhase(room.id, "CLOSE");
+    const closed = manager.settlePhase(room.id, "CLOSE");
+    const player = closed.players.find((candidate) => candidate.nickname === "散户2");
+
+    expect(player?.positions?.[0]?.stockId).toBeDefined();
+    expect(player?.positions?.[0]?.lockedReason).toBe("T+1");
+  });
+
+  it("settles regulation inquiry as a no-trade inserted day in fast mode", async () => {
+    const manager = new RoomManager(() => 0);
+    const engine = new GameEngine(manager, { fastMode: true });
+    const lobby = manager.createRoom("conn-1", "房主", "STANDARD_20");
+    const room = manager.startGame("conn-1", lobby.id);
+    const internalRooms = manager as unknown as { rooms: Map<string, typeof room> };
+    const storedRoom = internalRooms.rooms.get(room.id);
+    expect(storedRoom?.market).toBeDefined();
+    storedRoom!.phase = "DAY_RECAP";
+    storedRoom!.market!.regulationHeat = 10;
+    storedRoom!.market!.regulationState = "black_room";
+
+    engine.startRoom(room.id);
+    expect(manager.getRoom(room.id)?.phase).toBe("REGULATION_INQUIRY");
+    await vi.advanceTimersByTimeAsync(FAST_MODE_PHASE_DURATION_MS);
+
+    expect(manager.getRoom(room.id)?.phase).toBe("DAY_RECAP");
     engine.stopAll();
   });
 });

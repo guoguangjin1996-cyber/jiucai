@@ -1,5 +1,5 @@
 import { Color, Node } from "cc";
-import type { DanmakuItem } from "@jiucai-defense/shared";
+import type { DanmakuItem } from "../../store/LocalShared";
 import type { ClientRoom } from "../../store/ClientGameStore";
 import { Palette, label, panel } from "../UiKit";
 

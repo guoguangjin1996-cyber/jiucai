@@ -189,15 +189,19 @@ export function createMarketSectorsForMode(mode: GameMode): ElementSectorState[]
 export function createMarketSectorsForRoomType(roomType: GameRoomType): ElementSectorState[] {
   const config = getRoomTypeConfig(roomType);
   const full = createFullMarketSectors().slice(0, config.sectorCount);
-  let remainingStocks = config.stockCount;
+
+  if (config.stockPoolMode === "NINE_STOCKS") {
+    return full.map((sector) => ({
+      ...sector,
+      stocks: sector.stocks.slice(0, 3)
+    }));
+  }
 
   return full
     .map((sector) => {
-      const stockCount = Math.min(sector.stocks.length, remainingStocks);
-      remainingStocks -= stockCount;
       return {
         ...sector,
-        stocks: sector.stocks.slice(0, stockCount)
+        stocks: sector.stocks.slice(0, Math.ceil(config.stockCount / config.sectorCount))
       };
     })
     .filter((sector) => sector.stocks.length > 0);

@@ -1,154 +1,174 @@
-import { Color, Node } from "cc";
+import { Color } from "cc";
 import type { ClientGameStore, ClientRoom } from "../store/ClientGameStore";
-import { AuctionPanel } from "./components/AuctionPanel";
-import { DanmakuLayer } from "./components/DanmakuLayer";
-import { LimitBoardPanel } from "./components/LimitBoardPanel";
-import { PhaseBar } from "./components/PhaseBar";
-import { PlayerListView } from "./components/PlayerListView";
-import { PositionCard } from "./components/PositionCard";
-import { RegulationPanel } from "./components/RegulationPanel";
-import { VoiceLineToast } from "./components/VoiceLineToast";
-import { VotePanel } from "./components/VotePanel";
-import { SectorHeatmap } from "./components/SectorHeatmap";
-import { StockCard } from "./components/StockCard";
-import { MarketRankingPage } from "./MarketRankingPage";
-import { Palette, button, label, panel, row, statLine } from "./UiKit";
+import {
+  Palette,
+  bossMascot,
+  card,
+  jellyButton,
+  leekMascot,
+  pill,
+  place,
+  progressBar,
+  screen,
+  textAt
+} from "./UiKit";
 
 export class GameScreen {
-  private readonly phaseBar = new PhaseBar();
-  private readonly auctionPanel: AuctionPanel;
-  private readonly limitBoardPanel = new LimitBoardPanel();
-  private readonly positionCard: PositionCard;
-  private readonly regulationPanel = new RegulationPanel();
-  private readonly votePanel: VotePanel;
-  private readonly danmakuLayer = new DanmakuLayer();
-  private readonly playerList = new PlayerListView();
-  private readonly voiceLineToast = new VoiceLineToast();
-  private readonly sectorHeatmap = new SectorHeatmap();
-  private readonly stockCard = new StockCard();
-  private readonly marketRankingPage = new MarketRankingPage();
+  constructor(private readonly store: ClientGameStore) {}
 
-  constructor(private readonly store: ClientGameStore) {
-    this.auctionPanel = new AuctionPanel(store);
-    this.positionCard = new PositionCard(store);
-    this.votePanel = new VotePanel(store);
-  }
-
-  render(room: ClientRoom): Node {
+  render(room: ClientRoom) {
     const me = room.players[0];
     const isInstitution = me?.role === "institution";
-    const root = panel("GameScreen", 900, 1280, isInstitution ? Palette.purple : Palette.cream);
-    root.addChild(this.phaseBar.render(room));
-    root.addChild(isInstitution ? this.renderInstitutionHero(room) : this.renderRetailHero(room));
-    root.addChild(this.renderMarketBoard(room, isInstitution));
-    root.addChild(this.danmakuLayer.render(room));
-    root.addChild(this.voiceLineToast.render(room));
+    return isInstitution ? this.renderInstitution(room) : this.renderRetail(room);
+  }
 
-    if (room.phase === "VOTE" || room.phase === "REGULATION_INQUIRY") {
-      root.addChild(this.votePanel.render(room));
-    } else if (isInstitution) {
-      root.addChild(this.renderInstitutionActions(room));
-    } else {
-      root.addChild(this.renderRetailActions(room));
-    }
+  private renderRetail(room: ClientRoom) {
+    const root = screen("RetailGameScreen", Palette.cream);
+    this.renderTopBar(root, room, Palette.green);
 
+    const mutation = card("MutationCard", 300, 190, new Color(255, 246, 247, 255), 24, true);
+    textAt(mutation, "盘面异动", -72, 54, 130, 32, 22, Palette.textDark);
+    textAt(mutation, "集合竞价骗炮", -48, 12, 190, 34, 24, Palette.danger);
+    textAt(mutation, "开盘跳水问杀！\n监管在看着你哦~", 0, -46, 240, 56, 17, Palette.textSub);
+    place(mutation, leekMascot("PanicLeek", 0.5), 94, -40);
+    place(root, mutation, -185, 370);
+
+    const rank = card("PlayerRankCard", 300, 300, Palette.panel, 24, true);
+    textAt(rank, "玩家收益（非现金）", 0, 118, 250, 30, 19, Palette.textDark);
+    const players = room.players.length > 0 ? room.players : this.mockPlayers();
+    players.slice(0, 7).forEach((player, index) => {
+      const color = index < 3 ? Palette.success : Palette.danger;
+      const value = index < 3 ? `+${78 - index * 21}.${index + 2}%` : `-${3 + index * 4}.${index}%`;
+      textAt(rank, `${player.nickname}`, -58, 82 - index * 34, 150, 28, 16, Palette.textDark, "left");
+      textAt(rank, value, 90, 82 - index * 34, 86, 28, 16, color, "right");
+    });
+    place(root, rank, 185, 320);
+
+    const chart = card("RetailChart", 300, 250, Palette.panel, 24, true);
+    textAt(chart, "韭菜指数（日线）", -34, 94, 190, 28, 18, Palette.textDark);
+    textAt(chart, "泡泡叶股份 JC-001", -34, 66, 190, 24, 16, Palette.textSub);
+    this.renderSparkLine(chart, -120, -20, Palette.danger);
+    textAt(chart, "假装拉升", -76, 24, 92, 24, 14, Palette.warning);
+    textAt(chart, "主力出货", 70, -2, 92, 24, 14, Palette.danger);
+    textAt(chart, "-12.7%", 94, 72, 76, 30, 16, Palette.panel);
+    place(chart, card("DropBadge", 78, 30, Palette.green, 12, false), 94, 72);
+    place(root, chart, -185, 130);
+
+    const side = card("RetailSide", 300, 250, Palette.panelSoft, 24, true);
+    textAt(side, "持仓信息", -74, 94, 130, 28, 19, Palette.textDark);
+    textAt(side, "你是：不开车韭", 0, 52, 230, 28, 17, Palette.textDark);
+    textAt(side, "底牌：T+1", 0, 16, 230, 34, 24, Palette.danger);
+    textAt(side, "监管热度", -72, -38, 130, 28, 18, Palette.textDark);
+    progressBar(side, 30, -40, 130, 0.76, Palette.red);
+    textAt(side, "76%", 102, -38, 60, 28, 19, Palette.textDark);
+    place(root, side, 185, 130);
+
+    const cash = card("FlowCard", 300, 106, Palette.panelSoft, 20, true);
+    textAt(cash, "资金流向（主力在笑！）", 0, 30, 250, 26, 17, Palette.textDark);
+    textAt(cash, "主力净卖出 -88.60亿↓", -8, -4, 240, 24, 16, Palette.danger);
+    textAt(cash, "散户接盘 +68.88亿↑", -8, -32, 240, 24, 16, Palette.redDeep);
+    place(root, cash, -185, -80);
+
+    const behavior = card("BehaviorCard", 300, 106, Palette.mint, 20, true);
+    textAt(behavior, "韭菜行为", -76, 30, 130, 26, 17, Palette.textDark);
+    textAt(behavior, "追涨停 +99\n割肉 +99\n躺平 +50", 24, -16, 220, 68, 16, Palette.textDark);
+    place(root, behavior, 185, -80);
+
+    place(root, jellyButton("起飞\n重仓冲锋", () => this.store.submitAction("TAKE_OFF"), 180, 92, Palette.red, Palette.panel), -220, -240);
+    place(root, jellyButton("埋人\n低吸埋伏", () => this.store.submitAction("BURY"), 180, 92, Palette.green, Palette.panel), 0, -240);
+    place(root, jellyButton("装死\n假装看不见", () => this.store.submitAction("PLAY_DEAD"), 180, 92, Palette.yellow), 220, -240);
+    place(root, jellyButton("跑路\n及时止损", () => this.store.submitAction("RUN_AWAY"), 250, 92, Palette.purpleStrong, Palette.panel), -145, -360);
+    place(root, jellyButton("格局\n佛系躺平", () => this.store.submitAction("HOLD"), 250, 92, Palette.blue, Palette.panel), 145, -360);
+
+    const voice = card("VoiceToast", 640, 58, Palette.panelSoft, 22, true);
+    textAt(voice, "9:20已到，现在后悔躺平可就来不及咯~", 0, 0, 580, 34, 18, Palette.textSub);
+    place(root, voice, 0, -515);
     return root;
   }
 
-  private renderRetailHero(room: ClientRoom): Node {
-    const me = room.players[0];
-    const card = panel("RetailHero", 820, 220, Palette.mint);
-    card.addChild(label("韭菜小韭 · Lv.3 韭菜新手", 26, Palette.textDark));
-    card.addChild(statLine("总资产", `${me?.capital ?? 12345.67}`, Palette.textDark));
-    card.addChild(statLine("今日信心", `${me?.confidence ?? 68}`, Palette.warning));
-    card.addChild(label("今日目标：活着离开市场 · 不被画饼 · 赚够200局内本金值就收手", 17, Palette.textSub));
-    card.addChild(label("今日提醒：听大V不如听天由命，所有数值仅为娱乐模拟。", 17, Palette.textSub));
-    return card;
+  private renderInstitution(room: ClientRoom) {
+    const root = screen("InstitutionGameScreen", Palette.purple);
+    this.renderTopBar(root, room, Palette.purpleStrong);
+    place(root, bossMascot("BigBoss", 0.95), 240, 430);
+    textAt(root, "隐藏主力", -210, 455, 220, 40, 30, Palette.purpleStrong);
+    textAt(root, "Lv.99 主力大佬 · 操盘后台", -160, 416, 300, 30, 18, Palette.textSub);
+
+    const funds = card("InstitutionFunds", 640, 150, Palette.panel, 24, true);
+    textAt(funds, "操盘资金值", -210, 44, 180, 28, 18, Palette.textSub);
+    textAt(funds, "9,876,543,210", -146, 4, 310, 42, 32, Palette.textDark);
+    textAt(funds, "今日收益 +123,456,789", 148, 30, 260, 30, 20, Palette.success);
+    textAt(funds, "市场控制力 87%", 148, -14, 260, 30, 20, Palette.purpleStrong);
+    progressBar(funds, 150, -48, 220, 0.87, Palette.purpleStrong);
+    place(root, funds, 0, 330);
+
+    const tools = card("InstitutionTools", 640, 224, Palette.panel, 24, true);
+    textAt(tools, "主力工具箱", -220, 78, 180, 30, 22, Palette.textDark);
+    const toolItems = [
+      ["资金操控", "DRAW_PIE", Palette.purpleStrong],
+      ["筹码分布", "IGNITE", Palette.lilac],
+      ["涨停控制", "SEAL_BOARD", Palette.yellow],
+      ["消息发布", "DRAW_PIE", Palette.blue],
+      ["大V合作", "SCARE", Palette.green],
+      ["监管公关", "COOL_DOWN", Palette.red],
+      ["小黑屋记录", "SHIP", Palette.cream]
+    ] as const;
+    toolItems.forEach((item, index) => {
+      const x = -220 + (index % 4) * 146;
+      const y = 26 - Math.floor(index / 4) * 76;
+      place(tools, jellyButton(item[0], () => this.store.submitAction(item[1]), 126, 54, item[2]), x, y);
+    });
+    place(root, tools, 0, 142);
+
+    const chart = card("InstitutionChart", 310, 250, Palette.panelSoft, 24, true);
+    textAt(chart, "主力专属分时图", 0, 92, 240, 30, 20, Palette.textDark);
+    this.renderSparkLine(chart, -124, -8, Palette.purpleStrong);
+    textAt(chart, "吸筹阶段  →  拉升阶段", 0, 48, 250, 24, 16, Palette.purpleStrong);
+    textAt(chart, "洗盘阶段  →  出货阶段", 0, -76, 250, 24, 16, Palette.warning);
+    place(root, chart, -170, -90);
+
+    const chips = card("ChipCard", 310, 250, Palette.panel, 24, true);
+    textAt(chips, "实时筹码分布", -60, 92, 160, 28, 20, Palette.textDark);
+    textAt(chips, "主力持仓 62.3%", 0, 48, 240, 28, 18, Palette.purpleStrong);
+    progressBar(chips, 0, 22, 220, 0.623, Palette.purpleStrong);
+    textAt(chips, "散户持仓 30.1%", 0, -18, 240, 28, 18, Palette.greenDeep);
+    progressBar(chips, 0, -44, 220, 0.301, Palette.green);
+    textAt(chips, "游资持仓 7.6%", 0, -82, 240, 28, 18, Palette.orange);
+    place(root, chips, 170, -90);
+
+    const plan = card("ControlPlan", 640, 186, Palette.panelSoft, 24, true);
+    textAt(plan, "当前操控计划", -220, 64, 180, 30, 22, Palette.textDark);
+    ["09:15-09:25 集合竞价挂单 执行中", "09:30-10:30 缓慢拉升 执行中", "10:30-11:00 洗盘震仓 等待中", "14:30-15:00 封板出货 等待中"].forEach((line, index) => {
+      textAt(plan, line, 22, 30 - index * 34, 520, 26, 17, index < 2 ? Palette.success : Palette.textSub, "left");
+    });
+    place(root, plan, 0, -326);
+    textAt(root, "虚构娱乐模拟，不接入真实行情，仅作规则学习与娱乐体验", 0, -548, 640, 30, 17, Palette.textSub);
+    return root;
   }
 
-  private renderInstitutionHero(room: ClientRoom): Node {
-    const me = room.players[0];
-    const card = panel("InstitutionHero", 820, 250, Palette.panel);
-    card.addChild(label("隐藏主力 · Lv.99 主力大佬", 26, Palette.purpleStrong));
-    card.addChild(statLine("操盘资金值", `${me?.capital ?? 9876543210}`, Palette.textDark));
-    card.addChild(statLine("市场控制力", "87%", Palette.purpleStrong));
-    card.addChild(statLine("监管风险值", `${room.market?.regulationHeat ?? 23}/100`, Palette.warning));
-    card.addChild(label("台词：市场？不过是我的韭菜田罢了。", 18, Palette.textSub));
-    return card;
+  private renderTopBar(root: ReturnType<typeof screen>, room: ClientRoom, activeColor: Color): void {
+    place(root, jellyButton("‹", () => this.store.createRoom("STANDARD_20"), 58, 58, Palette.panel), -320, 585);
+    textAt(root, `第 ${room.day || 2} / ${room.maxDays || 5} 交易日`, 0, 585, 280, 38, 28, Palette.textDark);
+    textAt(root, "倒计时 01:08", 252, 585, 180, 30, 20, Palette.textDark);
+    const phases = ["盘前", "异动", "竞价", "开盘", "盘中", "收盘", "复盘"];
+    phases.forEach((phase, index) => {
+      pill(root, phase, -270 + index * 90, 528, 74, index === 3 ? activeColor : Palette.panelSoft);
+    });
   }
 
-  private renderMarketBoard(room: ClientRoom, isInstitution: boolean): Node {
-    const board = row("MarketBoard", 820, 430, new Color(255, 255, 255, 0));
-    const left = panel("MarketLeft", 395, 410, Palette.panel);
-    left.addChild(label(isInstitution ? "主力专属分时图" : "韭菜分时图", 24, Palette.textDark));
-    left.addChild(this.renderMinuteChartPlaceholder(room, isInstitution));
-    left.addChild(this.renderNoticeCard(isInstitution));
-    board.addChild(left);
-
-    const right = panel("MarketRight", 395, 410, isInstitution ? Palette.purple : Palette.panelSoft);
-    right.addChild(this.regulationPanel.render(room));
-    right.addChild(this.limitBoardPanel.render(room));
-    right.addChild(this.marketRankingPage.render(room));
-    board.addChild(right);
-    return board;
+  private renderSparkLine(parent: ReturnType<typeof card>, x: number, y: number, color: Color): void {
+    const points = ["▁", "▃", "▂", "▅", "▆", "▃", "▇", "▄", "▂", "▁", "▃", "▂"];
+    textAt(parent, points.join(""), x + 135, y, 260, 60, 34, color);
   }
 
-  private renderNoticeCard(isInstitution: boolean): Node {
-    const card = panel("NoticeCard", 350, 118, isInstitution ? Palette.cream : Palette.mint);
-    card.addChild(label("盘面异动：集合竞价骗炮", 20, Palette.textDark));
-    card.addChild(label(isInstitution ? "假单必须在9:20前撤，否则可能把自己也骗进去。" : "看起来像机会，也可能是饭局。", 16, Palette.textSub));
-    return card;
-  }
-
-  private renderMinuteChartPlaceholder(room: ClientRoom, isInstitution: boolean): Node {
-    const chart = panel("MinuteChartPlaceholder", 350, 210, isInstitution ? Palette.panelSoft : Palette.cream);
-    const pressure = room.market?.auctionPressure ?? 76;
-    chart.addChild(label("泡泡叶股份 JC-001", 19, Palette.textDark));
-    chart.addChild(label(isInstitution ? "吸筹 → 拉升 → 洗盘 → 出货" : "假装拉升 → 主力出货 → 韭菜跳水", 16, Palette.textSub));
-    chart.addChild(label("╭─╮  ╭╮    ╭──╮", 22, Palette.danger));
-    chart.addChild(label("╯ ╰──╯╰────╯  ╰─", 22, Palette.success));
-    chart.addChild(label(`模拟压力 ${pressure} · 虚构行情，仅局内展示`, 15, Palette.textSub));
-    return chart;
-  }
-
-  private renderRetailActions(room: ClientRoom): Node {
-    const actions = panel("RetailActions", 820, 300, Palette.panelSoft);
-    actions.addChild(label("韭菜操作区", 24, Palette.textDark));
-
-    if (room.phase === "AUCTION_FREE" || room.phase === "AUCTION_LOCKED" || room.phase === "OPEN_PRICE") {
-      actions.addChild(this.auctionPanel.render(room));
-      return actions;
-    }
-
-    const primary = row("RetailPrimaryActions", 760, 76);
-    primary.addChild(button("起飞", () => this.store.submitAction("TAKE_OFF"), Palette.red, 170, 62));
-    primary.addChild(button("埋人", () => this.store.submitAction("BURY"), Palette.green, 170, 62));
-    primary.addChild(button("装死", () => this.store.submitAction("PLAY_DEAD"), Palette.yellow, 170, 62));
-    actions.addChild(primary);
-    actions.addChild(label("起飞=看涨情绪 · 埋人=看跌情绪 · 装死=空仓围观", 17, Palette.textSub));
-    actions.addChild(this.positionCard.render(room));
-    return actions;
-  }
-
-  private renderInstitutionActions(room: ClientRoom): Node {
-    const actions = panel("InstitutionActions", 820, 360, Palette.panel);
-    actions.addChild(label("主力操盘后台", 24, Palette.purpleStrong));
-    const tools = row("InstitutionToolsA", 760, 70);
-    tools.addChild(button("资金操控", () => this.store.submitAction("DRAW_PIE"), Palette.purple, 150, 58));
-    tools.addChild(button("筹码分布", () => this.store.submitAction("IGNITE"), Palette.purple, 150, 58));
-    tools.addChild(button("涨停控制", () => this.store.submitAction("SEAL_BOARD"), Palette.purple, 150, 58));
-    tools.addChild(button("消息发布", () => this.store.sendDanmaku("利好来了？先别慌，这只是虚构弹幕。", "bullish"), Palette.yellow, 150, 58));
-    actions.addChild(tools);
-
-    const moves = row("InstitutionMoves", 760, 70);
-    moves.addChild(button("画饼", () => this.store.submitAction("DRAW_PIE"), Palette.red, 130, 58));
-    moves.addChild(button("吓人", () => this.store.submitAction("SCARE"), Palette.green, 130, 58));
-    moves.addChild(button("点火", () => this.store.submitAction("IGNITE"), Palette.yellow, 130, 58));
-    moves.addChild(button("掀桌", () => this.store.submitAction("SMASH"), Palette.purpleStrong, 130, 58));
-    moves.addChild(button("收网", () => this.store.submitAction("SHIP"), Palette.blue, 130, 58));
-    actions.addChild(moves);
-    actions.addChild(label("当前计划：09:15挂单执行中 · 10:30洗盘等待中 · 14:30封板出货等待中", 17, Palette.textSub));
-    actions.addChild(label(`监控目标：${room.players.map((player) => player.nickname).slice(0, 4).join(" / ") || "等待玩家入场"}`, 17, Palette.textSub));
-    return actions;
+  private mockPlayers() {
+    return [
+      { nickname: "韭菜王" },
+      { nickname: "原来是韭" },
+      { nickname: "格局打开" },
+      { nickname: "割肉小能手" },
+      { nickname: "绿油油" },
+      { nickname: "Bot-06" },
+      { nickname: "Bot-04" }
+    ];
   }
 }

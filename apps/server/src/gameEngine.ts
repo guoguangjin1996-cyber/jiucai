@@ -80,9 +80,10 @@ export class GameEngine {
       phaseStartedAt: startedAt,
       phaseEndsAt: endsAt
     });
-    this.callbacks.onPhaseChanged?.(room, phase);
+    const actualPhase = room.phase as DayFlowPhase;
+    this.callbacks.onPhaseChanged?.(room, actualPhase);
     this.callbacks.onStateUpdated?.(room);
-    this.schedulePhaseEnd(room.id, phase, startedAt, endsAt);
+    this.schedulePhaseEnd(room.id, actualPhase, startedAt, endsAt);
     return room;
   }
 
@@ -132,6 +133,11 @@ export class GameEngine {
 
     const settledRoom = this.roomManager.settlePhase(roomId, phase);
     this.callbacks.onStateUpdated?.(settledRoom);
+
+    if (phase === "REGULATION_INQUIRY") {
+      this.enterPhase(roomId, "DAY_RECAP");
+      return;
+    }
 
     if (phase === "DAY_RECAP") {
       if (settledRoom.status === "finished" || settledRoom.day >= settledRoom.maxDays) {

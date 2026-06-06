@@ -1,4 +1,9 @@
 node_modules/
 dist/
 *.log
+*.tsbuildinfo
 .DS_Store
+apps/client-cocos/library/
+apps/client-cocos/temp/
+apps/client-cocos/profiles/
+.codegraph/

@@ -1,9 +1,9 @@
 import { _decorator, Component } from "cc";
-import { GAME_NAME } from "@jiucai-defense/shared";
 import { ClientGameStore } from "./store/ClientGameStore";
 import { ScreenManager } from "./ui/ScreenManager";
 
 const { ccclass } = _decorator;
+const GAME_NAME = "韭菜保卫战：大A生存局";
 
 @ccclass("Main")
 export class Main extends Component {

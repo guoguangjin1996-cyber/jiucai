@@ -4,18 +4,20 @@ import {
   type AuctionSide,
   type DanmakuItem,
   DEFAULT_LIMIT_RATE,
+  type ElementSectorState,
   type GameLog,
   type GameRoom,
   type GameRoomType,
   type MarketPhase,
+  type QuantStrategy,
   INITIAL_INSTITUTION_CAPITAL,
   INITIAL_RETAIL_CAPITAL,
   INITIAL_CONFIDENCE,
   INITIAL_CONTROL_POINTS,
   INITIAL_FAKE_NEWS,
-  INSTITUTION_COUNT,
-  MAX_PLAYERS,
+  calculateQuantAttention,
   applyLimitDownLock,
+  createOrderBooksForSectors,
   createMarketSectorsForRoomType,
   buyPosition,
   createEmptyPosition,
@@ -120,7 +122,7 @@ export class RoomManager {
     }
 
     const roomId = createId("room");
-    const player = this.createPlayer(nickname, false, true);
+    const player = this.createPlayer(nickname, false, true, roomTypeConfig.maxDailyActions);
     const now = Date.now();
     const room: RoomSnapshot = {
       id: roomId,
@@ -168,7 +170,7 @@ export class RoomManager {
     const room = this.getRoomOrThrow(roomId);
     this.assertRoomHasSeat(room);
 
-    const player = this.createPlayer(nickname, false, false);
+    const player = this.createPlayer(nickname, false, false, room.roomTypeConfig.maxDailyActions);
     const updatedRoom = this.updateRoom(room.id, {
       ...room,
       players: [...room.players, player],
@@ -232,7 +234,7 @@ export class RoomManager {
     const room = this.getRoomForAction(connectionId, roomId);
     this.assertRoomHasSeat(room);
 
-    const bot = this.createPlayer(this.nextBotNickname(room), true, false);
+    const bot = this.createPlayer(this.nextBotNickname(room), true, false, room.roomTypeConfig.maxDailyActions);
     bot.ready = true;
 
     const updatedRoom = this.updateRoom(room.id, {
@@ -282,21 +284,21 @@ export class RoomManager {
     }
 
     let players = room.players.map((player) => ({ ...player }));
-    while (players.length < MAX_PLAYERS) {
-      const bot = this.createPlayer(this.nextBotNickname({ ...room, players }), true, false);
+    while (players.length < roomTypeConfig.maxPlayers) {
+      const bot = this.createPlayer(this.nextBotNickname({ ...room, players }), true, false, roomTypeConfig.maxDailyActions);
       bot.ready = true;
       players = [...players, bot];
     }
 
     const institutionIndexes = new Set<number>();
     let institutionPickAttempts = 0;
-    while (institutionIndexes.size < INSTITUTION_COUNT && institutionPickAttempts < players.length * 2) {
+    while (institutionIndexes.size < roomTypeConfig.institutionCount && institutionPickAttempts < players.length * 2) {
       institutionIndexes.add(Math.min(Math.floor(this.random() * players.length), players.length - 1));
       institutionPickAttempts += 1;
     }
     for (
       let index = players.length - 1;
-      institutionIndexes.size < INSTITUTION_COUNT && index >= 0;
+      institutionIndexes.size < roomTypeConfig.institutionCount && index >= 0;
       index -= 1
     ) {
       institutionIndexes.add(index);
@@ -326,6 +328,7 @@ export class RoomManager {
     const previousClose = 100;
     const { limitUpPrice, limitDownPrice } = createLimitPrices(previousClose, DEFAULT_LIMIT_RATE);
     const sectors = resolveSectorStatusTags(resolveStockTags(createMarketSectorsForRoomType(roomType)));
+    const orderBooks = createOrderBooksForSectors(sectors);
     const now = Date.now();
     const updatedRoom = this.updateRoom(room.id, {
       ...room,
@@ -371,6 +374,7 @@ export class RoomManager {
         regulationHeat: 0,
         regulationState: "normal",
         sectors,
+        orderBooks,
         rankings: resolveMarketRankings(sectors),
         quant: {
           enabled: true,
@@ -489,17 +493,25 @@ export class RoomManager {
     const room = this.getRoomOrThrow(roomId);
     const now = Date.now();
     const settledRoom =
-      phase === "OPEN_PRICE"
-        ? this.resolveOpenPriceForRoom(room)
-        : phase === "CLOSE"
-          ? this.resolveCloseForRoom(room)
-          : phase === "REGULATION_INQUIRY"
-            ? this.resolveRegulationInquiry(room)
-            : phase === "VOTE" || phase === "FOCUS_VOTE"
-              ? this.resolveLeaderboardVote(room)
-              : phase === "DAY_RESULT" || phase === "DAY_RECAP"
-                ? this.resolveGameEnd(room)
-            : room;
+      phase === "PRE_NEWS"
+        ? this.resolvePreNewsForRoom(room)
+        : phase === "MUTATION"
+          ? this.resolveMutationForRoom(room)
+          : phase === "AUCTION_FREE" || phase === "AUCTION_LOCKED"
+            ? this.resolveAuctionPreviewForRoom(room, phase)
+            : phase === "OPEN_PRICE"
+              ? this.resolveOpenPriceForRoom(room)
+              : this.isMarketRefreshPhase(phase)
+                ? this.resolveMarketRefreshForRoom(room, phase)
+                : phase === "CLOSE"
+                  ? this.resolveCloseForRoom(room)
+                  : phase === "REGULATION_INQUIRY"
+                    ? this.resolveRegulationInquiry(room)
+                    : phase === "VOTE" || phase === "FOCUS_VOTE"
+                      ? this.resolveLeaderboardVote(room)
+                      : phase === "DAY_RESULT" || phase === "DAY_RECAP"
+                        ? this.resolveGameEnd(room)
+                        : room;
     const updatedRoom = this.updateRoom(room.id, {
       ...settledRoom,
       logs: [
@@ -518,6 +530,173 @@ export class RoomManager {
     return this.cloneRoom(updatedRoom);
   }
 
+  private resolvePreNewsForRoom(room: RoomSnapshot): RoomSnapshot {
+    if (room.market === undefined) {
+      return room;
+    }
+
+    const refreshedSectors = this.refreshMarketSectors(room, "PRE_NEWS");
+    const news = this.createDailyNews(room);
+    return {
+      ...room,
+      market: {
+        ...room.market,
+        news,
+        day: room.day,
+        previousClose: room.market.closePrice || room.market.currentPrice || room.market.previousClose,
+        bullishHeat: Math.max(0, Math.floor(room.market.bullishHeat * 0.3)),
+        bearishHeat: Math.max(0, Math.floor(room.market.bearishHeat * 0.3)),
+        sectors: refreshedSectors,
+        rankings: resolveMarketRankings(refreshedSectors)
+      },
+      logs: [
+        ...room.logs,
+        this.createLog({
+          timestamp: Date.now(),
+          day: room.day,
+          phase: "PRE_NEWS",
+          type: "market:preNews",
+          message: news
+        })
+      ]
+    };
+  }
+
+  private resolveMutationForRoom(room: RoomSnapshot): RoomSnapshot {
+    if (room.market === undefined) {
+      return room;
+    }
+
+    const mutation = this.createMutationLine(room);
+    const refreshedSectors = this.refreshMarketSectors(room, "MUTATION");
+    return {
+      ...room,
+      market: {
+        ...room.market,
+        mutation,
+        bullishHeat: room.market.bullishHeat + (this.resolveTextBias(mutation) > 0 ? 1 : 0),
+        bearishHeat: room.market.bearishHeat + (this.resolveTextBias(mutation) < 0 ? 1 : 0),
+        sectors: refreshedSectors,
+        rankings: resolveMarketRankings(refreshedSectors)
+      },
+      logs: [
+        ...room.logs,
+        this.createLog({
+          timestamp: Date.now(),
+          day: room.day,
+          phase: "MUTATION",
+          type: "market:mutation",
+          message: mutation
+        })
+      ]
+    };
+  }
+
+  private resolveAuctionPreviewForRoom(room: RoomSnapshot, phase: MarketPhase): RoomSnapshot {
+    if (room.market === undefined) {
+      return room;
+    }
+
+    const orders = room.players.flatMap((player) =>
+      player.auctionOrder === undefined ? [] : [player.auctionOrder]
+    );
+    const auctionPressure = resolveAuctionPressure(orders);
+    const refreshedSectors = this.refreshMarketSectors(
+      {
+        ...room,
+        market: {
+          ...room.market,
+          auctionPressure
+        }
+      },
+      phase
+    );
+
+    return {
+      ...room,
+      market: {
+        ...room.market,
+        auctionPressure,
+        sectors: refreshedSectors,
+        rankings: resolveMarketRankings(refreshedSectors)
+      },
+      logs: [
+        ...room.logs,
+        this.createLog({
+          timestamp: Date.now(),
+          day: room.day,
+          phase,
+          type: "market:auctionPreview",
+          message: `集合竞价预览压力 ${auctionPressure}。`,
+          payload: {
+            auctionPressure
+          }
+        })
+      ]
+    };
+  }
+
+  private resolveMarketRefreshForRoom(room: RoomSnapshot, phase: MarketPhase): RoomSnapshot {
+    if (room.market === undefined) {
+      return room;
+    }
+
+    const refreshedSectors = this.refreshMarketSectors(room, phase);
+    const quantTargetId = resolveMarketRankings(refreshedSectors).stockQuantRiskRank[0];
+    const quantStrategy = this.resolveQuantStrategy(room, phase);
+    const quantAlertLevel = this.resolveQuantAlertLevel(room);
+    const boardBreakRisk = this.resolveBoardBreakRisk(room);
+    const lastAttackDay =
+      quantStrategy === "DRAIN_LIQUIDITY" || quantStrategy === "T_PLUS_ONE_KNIFE"
+        ? room.day
+        : room.market.quant?.lastAttackDay;
+
+    return {
+      ...room,
+      market: {
+        ...room.market,
+        boardBreakRisk,
+        sectors: refreshedSectors,
+        rankings: resolveMarketRankings(refreshedSectors),
+        quant: {
+          enabled: room.roomTypeConfig.quantLevel !== "simplified" || phase !== "PRE_NEWS",
+          harvestScore: room.market.quant?.harvestScore ?? 0,
+          alertLevel: quantAlertLevel,
+          ...(quantTargetId === undefined ? {} : { targetStockId: quantTargetId }),
+          strategy: quantStrategy,
+          cooldown: Math.max(0, (room.market.quant?.cooldown ?? 0) - 1),
+          visibility: Math.min(100, (room.market.quant?.visibility ?? 0) + quantAlertLevel * 6),
+          ...(lastAttackDay === undefined ? {} : { lastAttackDay })
+        }
+      },
+      logs: [
+        ...room.logs,
+        this.createLog({
+          timestamp: Date.now(),
+          day: room.day,
+          phase,
+          type: "market:refresh",
+          message: `${phase} 盘面刷新完成。`,
+          payload: {
+            quantTargetId,
+            quantStrategy,
+            quantAlertLevel,
+            boardBreakRisk
+          }
+        })
+      ]
+    };
+  }
+
+  private isMarketRefreshPhase(phase: MarketPhase): boolean {
+    return (
+      phase === "MORNING_TRADING" ||
+      phase === "MIDDAY_ROTATION" ||
+      phase === "AFTERNOON_TRADING" ||
+      phase === "CLOSING_RUSH"
+    );
+  }
+
   recordPlayerAction(connectionId: string, payload: SubmitActionPayload): RoomSnapshot {
     const session = this.sessions.get(connectionId);
     if (session === undefined) {
@@ -533,10 +712,15 @@ export class RoomManager {
     if (player === undefined) {
       throw new RoomError("PLAYER_NOT_FOUND", "玩家不存在。");
     }
+    this.assertCanSubmitGameAction(room, player, payload);
 
     const now = Date.now();
     if (payload.actionType === "auction") {
-      return this.markPlayerSubmitted(this.recordAuctionAction(room, player, payload, now), player.id);
+      return this.markPlayerSubmitted(
+        this.recordAuctionAction(room, player, payload, now),
+        player.id,
+        this.countsAsDailyAction(payload)
+      );
     }
 
     if (payload.actionType === "regulationVote") {
@@ -548,7 +732,11 @@ export class RoomManager {
     }
 
     if (this.isIntradayAction(payload.action)) {
-      return this.markPlayerSubmitted(this.recordIntradayAction(room, player, payload.action, now), player.id);
+      return this.markPlayerSubmitted(
+        this.recordIntradayAction(room, player, payload.action, now),
+        player.id,
+        this.countsAsDailyAction(payload)
+      );
     }
 
     const actionPayload: Record<string, string> = {
@@ -577,7 +765,7 @@ export class RoomManager {
       updatedAt: now
     });
 
-    return this.markPlayerSubmitted(updatedRoom, player.id);
+    return this.markPlayerSubmitted(updatedRoom, player.id, this.countsAsDailyAction(payload));
   }
 
   recordDanmakuSend(connectionId: string, payload: DanmakuSendPayload): RoomSnapshot {
@@ -771,18 +959,78 @@ export class RoomManager {
     return room;
   }
 
-  private markPlayerSubmitted(room: RoomSnapshot, playerId: string): RoomSnapshot {
+  private markPlayerSubmitted(
+    room: RoomSnapshot,
+    playerId: string,
+    countDailyAction = false
+  ): RoomSnapshot {
+    const shouldCountDailyAction =
+      countDailyAction && !room.submittedPlayerIds.includes(playerId);
     if (room.submittedPlayerIds.includes(playerId)) {
       return this.cloneRoom(room);
     }
 
     const updatedRoom = this.updateRoom(room.id, {
       ...room,
+      players: shouldCountDailyAction
+        ? room.players.map((player) =>
+            player.id === playerId
+              ? { ...player, dailyActionCount: (player.dailyActionCount ?? 0) + 1 }
+              : player
+          )
+        : room.players,
       submittedPlayerIds: [...room.submittedPlayerIds, playerId],
       updatedAt: Date.now()
     });
 
     return this.cloneRoom(updatedRoom);
+  }
+
+  private assertCanSubmitGameAction(
+    room: RoomSnapshot,
+    player: RoomPlayer,
+    payload: SubmitActionPayload
+  ): void {
+    if (!player.alive) {
+      throw new RoomError("PLAYER_ELIMINATED", "出局玩家不能继续提交动作。");
+    }
+
+    if (!this.countsAsDailyAction(payload)) {
+      return;
+    }
+
+    const currentCount = player.dailyActionCount ?? 0;
+    const maxCount = player.maxDailyActionCount ?? room.roomTypeConfig.maxDailyActions;
+    if (!room.submittedPlayerIds.includes(player.id) && currentCount >= maxCount) {
+      throw new RoomError("DAILY_ACTION_LIMIT", "今日主动操作次数已用完。");
+    }
+
+    if (
+      player.role === "retail" &&
+      payload.action === "TAKE_OFF" &&
+      this.getOpenPositions(player).length >= room.roomTypeConfig.maxPositions
+    ) {
+      throw new RoomError("POSITION_LIMIT", "持仓已满，只能跑路或格局。");
+    }
+  }
+
+  private countsAsDailyAction(payload: SubmitActionPayload): boolean {
+    return payload.actionType === "auction" || this.isIntradayAction(payload.action);
+  }
+
+  private getOpenPositions(player: RoomPlayer): NonNullable<RoomPlayer["positions"]> {
+    const positions = (player.positions ?? []).filter((position) => position.hasPosition);
+    if (!player.position.hasPosition) {
+      return positions;
+    }
+
+    const hasLegacyPosition = positions.some(
+      (position) =>
+        position.stockId !== undefined &&
+        position.stockId === player.position.stockId &&
+        position.buyDay === player.position.buyDay
+    );
+    return hasLegacyPosition ? positions : [player.position, ...positions];
   }
 
   private resolveDefaultAction(player: RoomPlayer, phase: MarketPhase): string {
@@ -800,7 +1048,7 @@ export class RoomManager {
   }
 
   private assertRoomHasSeat(room: RoomSnapshot): void {
-    if (room.players.length >= MAX_PLAYERS) {
+    if (room.players.length >= room.roomTypeConfig.maxPlayers) {
       throw new RoomError("ROOM_FULL", "房间人数已满。");
     }
   }
@@ -811,7 +1059,12 @@ export class RoomManager {
     }
   }
 
-  private createPlayer(nickname: string, isBot: boolean, isHost: boolean): RoomPlayer {
+  private createPlayer(
+    nickname: string,
+    isBot: boolean,
+    isHost: boolean,
+    maxDailyActionCount = getRoomTypeConfig("STANDARD_20").maxDailyActions
+  ): RoomPlayer {
     return {
       id: createId(isBot ? "bot" : "player"),
       nickname: nickname.trim(),
@@ -827,7 +1080,7 @@ export class RoomManager {
       position: createEmptyPosition(),
       positions: [],
       dailyActionCount: 0,
-      maxDailyActionCount: getRoomTypeConfig("STANDARD_20").maxDailyActions,
+      maxDailyActionCount,
       suspicion: 0,
       votedToday: false,
       isHost,
@@ -1491,8 +1744,16 @@ export class RoomManager {
 
     const marketResolution = this.resolveMarketDayResult(room);
     const result = marketResolution.result;
+    const tradeStock = this.pickTradeStock(room);
     const settledPlayers = room.players.map((player) =>
-      this.settlePlayerByResult(player, result, room.day, room.market?.currentPrice ?? 100)
+      this.settlePlayerByResult(
+        player,
+        result,
+        room.day,
+        room.market?.currentPrice ?? 100,
+        room.roomTypeConfig.maxPositions,
+        tradeStock
+      )
     );
     const closePrice = this.resolveClosePrice(room.market.currentPrice, result);
     const voiceLine = this.createResultVoiceLine(result, room.day);
@@ -1870,7 +2131,7 @@ export class RoomManager {
     const finalSettlement = this.createFinalSettlement(
       candidateRoom,
       winnerRole,
-      `5 个虚拟交易日结束，${champion.nickname} 以 ROI ${(champion.roi ?? 0) * 100}% 获得本局冠军。`
+      `${candidateRoom.maxDays} 个虚拟交易日结束，${champion.nickname} 以 ROI ${(champion.roi ?? 0) * 100}% 获得本局冠军。`
     );
 
     return {
@@ -2044,6 +2305,204 @@ export class RoomManager {
     return updateRegulationHeat(currentHeat, events);
   }
 
+  private refreshMarketSectors(room: RoomSnapshot, phase: MarketPhase): ElementSectorState[] {
+    const market = room.market;
+    if (market?.sectors === undefined) {
+      return [];
+    }
+
+    const takeOffCount = room.players.filter((player) => player.intradayChoice === "TAKE_OFF").length;
+    const buryCount = room.players.filter((player) => player.intradayChoice === "BURY").length;
+    const holdCount = room.players.filter((player) => player.intradayChoice === "HOLD").length;
+    const institutionHype = room.institutionIntradayActions.filter((action) =>
+      action === "DRAW_PIE" || action === "IGNITE" || action === "SHIP"
+    ).length;
+    const institutionPressure = room.institutionIntradayActions.filter((action) =>
+      action === "SCARE" || action === "SMASH" || action === "SHAKE_OUT"
+    ).length;
+    const phaseMomentum = this.resolvePhaseMomentum(room, phase);
+    const quantMultiplier = this.resolveQuantMultiplier(room);
+
+    const updatedSectors = market.sectors.map((sector, sectorIndex) => {
+      const sectorFocus = sectorIndex === room.day % Math.max(1, market.sectors?.length ?? 1) ? 8 : 0;
+      const stocks = sector.stocks.map((stock, stockIndex) => {
+        const leaderBias = stockIndex === 0 ? 4 : stockIndex === 1 ? 2 : 0;
+        const backRowRisk = stock.liquidity < 45 ? 10 : 0;
+        const tPlusOneLockedCount = this.countLockedPositionsForStock(room, stock.id);
+        const crowdDelta = takeOffCount * 4 + holdCount * 2 - buryCount * 3;
+        const sentimentDelta = market.bullishHeat * 3 - market.bearishHeat * 3;
+        const moneyFlowScore = this.clampScore(
+          stock.moneyFlowScore * 0.65 + 25 + crowdDelta + institutionHype * 8 - institutionPressure * 6 + sectorFocus
+        );
+        const danmakuHeat = this.clampScore(stock.danmakuHeat * 0.7 + market.bullishHeat * 4 + market.bearishHeat * 3 + leaderBias);
+        const holderCountScore = this.clampScore(stock.holderCountScore * 0.7 + takeOffCount * 8 + holdCount * 4 + tPlusOneLockedCount * 12);
+        const viewCountScore = this.clampScore(stock.viewCountScore * 0.7 + danmakuHeat * 0.35 + sectorFocus + leaderBias);
+        const crowdedness = this.clampScore(
+          stock.crowdedness * 0.55 + holderCountScore * 0.35 + (stock.liquidity < 45 ? 15 : 0)
+        );
+        const tPlusOneCrowdedness = this.clampScore(
+          stock.tPlusOneCrowdedness * 0.55 + tPlusOneLockedCount * 25 + takeOffCount * 4
+        );
+        const lowLiquidityRisk = Math.max(0, 100 - stock.liquidity);
+        const quantAttention = this.clampScore(
+          calculateQuantAttention({
+            crowdedness,
+            volatilityRisk: stock.volatility,
+            liquidityRisk: lowLiquidityRisk,
+            danmakuHeat,
+            mainForceTrace: institutionHype * 18 + institutionPressure * 12,
+            tPlusOneLockedCount: tPlusOneLockedCount * 20
+          }) * quantMultiplier
+        );
+        const regulationAttention = this.clampScore(
+          stock.regulationAttention * 0.65 + market.regulationHeat * 7 + Math.abs(stock.changePercent) * 4
+        );
+        const changePercent = this.clampPercent(
+          stock.changePercent + phaseMomentum + (sentimentDelta + crowdDelta) / 50 + (stock.sectorBeta - 50) / 100
+        );
+        const isLimitUp = changePercent >= market.limitRate * 100;
+        const isLimitDown = changePercent <= -market.limitRate * 100;
+
+        return {
+          ...stock,
+          currentPrice: this.roundPrice(stock.previousClose * (1 + changePercent / 100)),
+          changePercent,
+          danmakuHeat,
+          viewCountScore,
+          holderCountScore,
+          moneyFlowScore,
+          crowdedness,
+          tPlusOneCrowdedness,
+          quantAttention,
+          regulationAttention,
+          isLimitUp,
+          isLimitDown,
+          boardStrength: isLimitUp ? Math.min(10, Math.max(1, Math.round(6 + changePercent - market.limitRate * 100))) : 0,
+          boardBreakRisk: isLimitUp ? this.clampScore(quantAttention * 0.45 + crowdedness * 0.35 + institutionPressure * 10) : 0
+        };
+      });
+
+      const heat = this.average(stocks.map((stock) => stock.danmakuHeat + stock.viewCountScore)) / 2;
+      const flow = this.average(stocks.map((stock) => stock.moneyFlowScore));
+      const risk = this.average(stocks.map((stock) => stock.quantAttention + stock.regulationAttention)) / 2;
+      const resonance = this.clampScore(
+        stocks.filter((stock) => stock.changePercent > 0).length * 14 + Math.max(0, phaseMomentum) * 6
+      );
+
+      return {
+        ...sector,
+        heat: this.clampScore(heat),
+        flow: this.clampScore(flow),
+        resonance,
+        risk: this.clampScore(risk),
+        popularityScore: this.clampScore(heat * 0.45 + flow * 0.25 + resonance * 0.15 + sectorFocus),
+        strengthScore: this.clampScore(
+          this.average(stocks.map((stock) => stock.changePercent * 5 + stock.boardStrength * 6 + 50))
+        ),
+        moneyFlowScore: this.clampScore(flow),
+        riskScore: this.clampScore(risk),
+        resonanceScore: resonance,
+        stocks
+      };
+    });
+
+    return resolveSectorStatusTags(resolveStockTags(updatedSectors));
+  }
+
+  private resolvePhaseMomentum(room: RoomSnapshot, phase: MarketPhase): number {
+    const market = room.market;
+    if (market === undefined) {
+      return 0;
+    }
+
+    const base = market.auctionPressure * 0.08 + market.bullishHeat * 0.12 - market.bearishHeat * 0.12;
+    const institutionBoost =
+      (room.institutionIntradayActions.includes("IGNITE") ? 0.8 : 0) +
+      (room.institutionIntradayActions.includes("SMASH") ? -0.8 : 0) +
+      (room.institutionIntradayActions.includes("SHIP") ? -0.5 : 0);
+
+    if (phase === "PRE_NEWS") return 0;
+    if (phase === "MUTATION") return base * 0.4;
+    if (phase === "AUCTION_FREE" || phase === "AUCTION_LOCKED") return market.auctionPressure * 0.05;
+    if (phase === "MORNING_TRADING") return base + institutionBoost;
+    if (phase === "MIDDAY_ROTATION") return base * 0.5;
+    if (phase === "AFTERNOON_TRADING") return base * 0.8 + institutionBoost;
+    if (phase === "CLOSING_RUSH") return base + institutionBoost * 1.2;
+    return 0;
+  }
+
+  private resolveQuantMultiplier(room: RoomSnapshot): number {
+    if (room.roomTypeConfig.quantLevel === "simplified") return 0.7;
+    if (room.roomTypeConfig.quantLevel === "enhanced") return 1.25;
+    return 1;
+  }
+
+  private resolveQuantStrategy(room: RoomSnapshot, phase: MarketPhase): QuantStrategy {
+    if (room.roomTypeConfig.quantLevel === "simplified") return "SCAN_CROWD";
+    if (phase === "CLOSING_RUSH") return "DRAIN_LIQUIDITY";
+    if (this.maxStockScore(room, (stock) => stock.tPlusOneCrowdedness) >= 70) return "T_PLUS_ONE_KNIFE";
+    if (room.institutionIntradayActions.length >= 2) return "ANTI_MAIN_FORCE";
+    return "SCAN_CROWD";
+  }
+
+  private resolveQuantAlertLevel(room: RoomSnapshot): number {
+    const maxAttention = this.maxStockScore(room, (stock) => stock.quantAttention);
+    return Math.max(0, Math.min(5, Math.ceil(maxAttention / 20)));
+  }
+
+  private resolveBoardBreakRisk(room: RoomSnapshot): number {
+    const maxRisk = this.maxStockScore(room, (stock) => stock.boardBreakRisk);
+    const institutionRisk = room.institutionIntradayActions.includes("SHIP") ? 20 : 0;
+    return this.clampScore(maxRisk + institutionRisk);
+  }
+
+  private maxStockScore(room: RoomSnapshot, score: (stock: ElementSectorState["stocks"][number]) => number): number {
+    const stocks = room.market?.sectors?.flatMap((sector) => sector.stocks) ?? [];
+    return stocks.reduce((max, stock) => Math.max(max, score(stock)), 0);
+  }
+
+  private countLockedPositionsForStock(room: RoomSnapshot, stockId: string): number {
+    return room.players.reduce((count, player) => {
+      const positions = this.getOpenPositions(player);
+      return count + positions.filter((position) => position.stockId === stockId && !position.sellable).length;
+    }, 0);
+  }
+
+  private createDailyNews(room: RoomSnapshot): string {
+    const lines = [
+      "盘前公告：五行盘面重新开局，所有数字均为虚构娱乐模拟。",
+      "盘前公告：量化机构开始扫描拥挤交易，今日别买得太整齐。",
+      "盘前公告：监管热度归档刷新，盘面太抽象会进入问询。"
+    ];
+    return lines[(room.day - 1) % lines.length] ?? lines[0] ?? "盘前公告：虚构娱乐模拟盘面刷新。";
+  }
+
+  private createMutationLine(room: RoomSnapshot): string {
+    const lines = [
+      "盘前异动：火系弹幕升温，后排票出现拥挤迹象。",
+      "盘前异动：水系暗线流动，量化正在扫描后排。",
+      "盘前异动：土系护盘增强，退潮时资金开始找避风处。"
+    ];
+    return lines[(room.day + room.players.length) % lines.length] ?? lines[0] ?? "盘前异动：虚构盘面出现情绪波动。";
+  }
+
+  private average(values: number[]): number {
+    if (values.length === 0) return 0;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  }
+
+  private clampScore(value: number): number {
+    return Math.max(0, Math.min(100, Math.round(value * 100) / 100));
+  }
+
+  private clampPercent(value: number): number {
+    return Math.max(-10, Math.min(10, Math.round(value * 100) / 100));
+  }
+
+  private roundPrice(value: number): number {
+    return Math.round(value * 100) / 100;
+  }
+
   private pickTopVotedPlayerId(votes: [string, string][]): string {
     const voteCounts = new Map<string, number>();
     for (const [, targetPlayerId] of votes) {
@@ -2183,11 +2642,24 @@ export class RoomManager {
     return 0;
   }
 
+  private pickTradeStock(room: RoomSnapshot): ElementSectorState["stocks"][number] | undefined {
+    const sectors = room.market?.sectors ?? [];
+    const stocks = sectors.flatMap((sector) => sector.stocks);
+    const preferredStockId =
+      room.market?.rankings?.stockPopularityRank[0] ??
+      room.market?.rankings?.stockLeadershipRank[0] ??
+      stocks[0]?.id;
+
+    return stocks.find((stock) => stock.id === preferredStockId) ?? stocks[0];
+  }
+
   private settlePlayerByResult(
     player: RoomPlayer,
     result: MarketDayResult,
     day: number,
-    costPrice: number
+    costPrice: number,
+    maxPositions: number,
+    tradeStock?: ElementSectorState["stocks"][number]
   ): RoomPlayer {
     const choice = player.intradayChoice;
     if (choice === undefined || player.role === "institution") {
@@ -2224,10 +2696,24 @@ export class RoomManager {
     const isDown = result === "BIG_DOWN" || result === "SMALL_DOWN" || result === "BOARD_BREAK";
 
     if (choice === "TAKE_OFF" && isUp) {
+      const basePosition = buyPosition(day, tradeStock?.currentPrice ?? costPrice, "normal");
+      const position = {
+        ...basePosition,
+        ...(tradeStock === undefined
+          ? {}
+          : {
+              stockId: tradeStock.id,
+              stockName: tradeStock.name,
+              element: tradeStock.element,
+              currentPrice: tradeStock.currentPrice
+            })
+      };
+      const openPositions = this.getOpenPositions(player).slice(0, maxPositions - 1);
       return this.addTitle({
         ...player,
         capital: player.capital + 20,
-        position: buyPosition(day, costPrice, "normal")
+        position,
+        positions: [...openPositions, position]
       }, result === "BIG_UP" ? "封板信仰者" : undefined);
     }
 
@@ -2377,6 +2863,11 @@ export class RoomManager {
       }
       if (room.market.quant !== undefined) {
         clonedMarket.quant = { ...room.market.quant };
+      }
+      if (room.market.orderBooks !== undefined) {
+        clonedMarket.orderBooks = Object.fromEntries(
+          Object.entries(room.market.orderBooks).map(([stockId, orderBook]) => [stockId, { ...orderBook }])
+        );
       }
       clonedRoom.market = clonedMarket;
     }

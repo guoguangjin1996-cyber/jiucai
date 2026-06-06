@@ -9,6 +9,7 @@
     "assets/scripts/Main.ts",
     "assets/scripts/audio/VoiceLineManager.ts",
     "assets/scripts/net/WsClient.ts",
+    "assets/scripts/store/LocalShared.ts",
     "assets/scripts/store/ClientGameStore.ts",
     "assets/scripts/ui/UiKit.ts",
     "assets/scripts/ui/ScreenManager.ts",

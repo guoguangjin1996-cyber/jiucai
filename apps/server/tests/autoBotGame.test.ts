@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { MAX_PLAYERS, rankPlayersByROI } from "@jiucai-defense/shared";
+import { getRoomTypeConfig, rankPlayersByROI } from "@jiucai-defense/shared";
 import { DAY_PHASES } from "../src/dayFlow";
 import { RoomManager } from "../src/roomManager";
 
-describe("8 bot auto play smoke test", () => {
+describe("bot auto play smoke test", () => {
   it("can auto-fill and produce a winner placeholder after a full virtual game", () => {
     const manager = new RoomManager(() => 0);
     const room = manager.createRoom("conn-1", "内测员");
     const started = manager.startGame("conn-1", room.id);
 
-    expect(started.players).toHaveLength(MAX_PLAYERS);
+    expect(started.players).toHaveLength(getRoomTypeConfig("STANDARD_20").maxPlayers);
     expect(started.players.filter((player) => player.isBot)).toHaveLength(7);
 
     let current = started;

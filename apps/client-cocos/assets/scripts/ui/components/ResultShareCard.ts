@@ -1,5 +1,5 @@
 import { Node } from "cc";
-import type { PlayerTitle } from "@jiucai-defense/shared";
+import type { PlayerTitle } from "../../store/LocalShared";
 import { Palette, label, panel } from "../UiKit";
 
 export interface ResultShareCardData {
@@ -19,7 +19,7 @@ export class ResultShareCard {
     card.addChild(label(`个人称号：${data.title}`, 19, Palette.textDark));
     card.addChild(label(`本局名场面：${data.biggestEvent}`, 18, Palette.textSub));
     card.addChild(label(`分享文案：${data.shareText}`, 18, Palette.textSub));
-    card.addChild(label("虚构娱乐模拟，不构成投资建议。", 16, Palette.warning));
+    card.addChild(label("虚构娱乐模拟，不提供真实交易指引。", 16, Palette.warning));
     return card;
   }
 }

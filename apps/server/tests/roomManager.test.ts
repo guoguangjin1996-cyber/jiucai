@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INITIAL_CAPITAL, INITIAL_CONFIDENCE, MAX_PLAYERS } from "@jiucai-defense/shared";
+import { INITIAL_CAPITAL, INITIAL_CONFIDENCE, getRoomTypeConfig } from "@jiucai-defense/shared";
 import { RoomError, RoomManager } from "../src/roomManager";
 
 describe("RoomManager", () => {
@@ -24,15 +24,16 @@ describe("RoomManager", () => {
     expect(updatedRoom.players.map((player) => player.nickname)).toContain("新玩家");
   });
 
-  it("does not allow more than 8 players", () => {
+  it("does not allow more than the configured room capacity", () => {
     const manager = new RoomManager();
     const room = manager.createRoom("conn-1", "玩家1");
+    const maxPlayers = getRoomTypeConfig("STANDARD_20").maxPlayers;
 
-    for (let index = 2; index <= MAX_PLAYERS; index += 1) {
+    for (let index = 2; index <= maxPlayers; index += 1) {
       manager.joinRoom(`conn-${index}`, room.id, `玩家${index}`);
     }
 
-    expect(() => manager.joinRoom("conn-9", room.id, "玩家9")).toThrow(RoomError);
+    expect(() => manager.joinRoom("conn-overflow", room.id, "溢出玩家")).toThrow(RoomError);
   });
 
   it("adds a bot player", () => {
@@ -59,16 +60,18 @@ describe("RoomManager", () => {
     expect(result?.room?.players[0]?.nickname).toBe("房主");
   });
 
-  it("starts an 8-player game with two institutions and six retail players", () => {
+  it("starts a standard game with two institutions and six retail players", () => {
     const manager = new RoomManager(() => 0);
     const room = manager.createRoom("conn-1", "房主");
+    const maxPlayers = getRoomTypeConfig("STANDARD_20").maxPlayers;
 
-    for (let index = 2; index <= MAX_PLAYERS; index += 1) {
+    for (let index = 2; index <= maxPlayers; index += 1) {
       manager.joinRoom(`conn-${index}`, room.id, `玩家${index}`);
     }
 
     const startedRoom = manager.startGame("conn-1", room.id);
 
+    expect(startedRoom.players).toHaveLength(getRoomTypeConfig("STANDARD_20").maxPlayers);
     expect(startedRoom.status).toBe("playing");
     expect(startedRoom.phase).toBe("PRE_NEWS");
     expect(startedRoom.day).toBe(1);
@@ -90,13 +93,14 @@ describe("RoomManager", () => {
     });
     expect(startedRoom.market?.sectors).toHaveLength(5);
     expect(startedRoom.market?.sectors?.flatMap((sector) => sector.stocks)).toHaveLength(30);
+    expect(Object.keys(startedRoom.market?.orderBooks ?? {})).toHaveLength(30);
     expect(startedRoom.market?.news).toContain("虚构娱乐模拟");
   });
 
   it("shows institution resources only to the institution player", () => {
     const manager = new RoomManager(() => 0);
     const room = manager.createRoom("conn-1", "房主");
-    for (let index = 2; index <= MAX_PLAYERS; index += 1) {
+    for (let index = 2; index <= getRoomTypeConfig("STANDARD_20").maxPlayers; index += 1) {
       manager.joinRoom(`conn-${index}`, room.id, `玩家${index}`);
     }
 
@@ -123,7 +127,7 @@ describe("RoomManager", () => {
 
     const startedRoom = manager.startGame("conn-1", room.id);
 
-    expect(startedRoom.players).toHaveLength(MAX_PLAYERS);
+    expect(startedRoom.players).toHaveLength(getRoomTypeConfig("STANDARD_20").maxPlayers);
     expect(startedRoom.players.filter((player) => player.isBot)).toHaveLength(6);
     expect(startedRoom.players.some((player) => player.nickname === "涨停哥")).toBe(true);
   });

@@ -17,9 +17,33 @@ describe("game room type configs", () => {
   });
 
   it("sets stock pools for each room type", () => {
-    expect(createMarketSectorsForRoomType("QUICK_10").flatMap((sector) => sector.stocks)).toHaveLength(9);
+    const quickSectors = createMarketSectorsForRoomType("QUICK_10");
+    expect(quickSectors).toHaveLength(3);
+    expect(quickSectors.every((sector) => sector.stocks.length === 3)).toBe(true);
+    expect(quickSectors.flatMap((sector) => sector.stocks)).toHaveLength(9);
     expect(createMarketSectorsForRoomType("STANDARD_20").flatMap((sector) => sector.stocks)).toHaveLength(30);
     expect(createMarketSectorsForRoomType("LONG_30").flatMap((sector) => sector.stocks)).toHaveLength(30);
+  });
+
+  it("sets room player and role structures", () => {
+    expect(getRoomTypeConfig("QUICK_10")).toMatchObject({
+      maxPlayers: 8,
+      institutionCount: 2,
+      retailCount: 6,
+      stockPoolMode: "NINE_STOCKS"
+    });
+    expect(getRoomTypeConfig("STANDARD_20")).toMatchObject({
+      maxPlayers: 8,
+      institutionCount: 2,
+      retailCount: 6,
+      stockPoolMode: "FULL_MARKET"
+    });
+    expect(getRoomTypeConfig("LONG_30")).toMatchObject({
+      maxPlayers: 8,
+      institutionCount: 2,
+      retailCount: 6,
+      stockPoolMode: "FULL_MARKET"
+    });
   });
 
   it("sets position and daily action limits", () => {

@@ -7,6 +7,11 @@
       "fitHeight": false
     },
     "startScene": "b6e16bd3-40c7-4dcc-8bdd-bc5fe9361d9b"
+  },
+  "__version__": "1.0.5",
+  "fbx": {
+    "legacyFbxImporter": {
+      "visible": true
+    }
   }
 }
-

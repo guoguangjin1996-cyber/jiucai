@@ -7,10 +7,15 @@
     "version": "3.8.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
+    "test": "node ../../node_modules/vitest/vitest.mjs run --passWithNoTests"
   },
   "dependencies": {
     "@jiucai-defense/shared": "workspace:*"
-  }
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.6"
+  },
+  "uuid": "b0a8925d-f47a-4048-8b93-e3cab6a33cbf"
 }
