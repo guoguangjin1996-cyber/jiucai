@@ -7,6 +7,8 @@ import type {
   MarketState,
   DanmakuItem,
   PlayerRole,
+  RetailToolType,
+  RetailWarningDanmakuType,
   PlayerState,
   GameRoomTypeConfig
 } from "@jiucai-defense/shared";
@@ -63,8 +65,8 @@ export interface SubmitActionPayload {
   stockId?: string;
   amountLevel?: "light" | "normal" | "heavy";
   orderAmount?: number;
-  toolType?: string;
-  warningType?: string;
+  toolType?: RetailToolType;
+  warningType?: RetailWarningDanmakuType;
 }
 
 export interface DanmakuSendPayload {

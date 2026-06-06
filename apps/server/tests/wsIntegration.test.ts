@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { getRoomTypeConfig } from "@jiucai-defense/shared";
 import { createAppServer } from "../src/index";
 import type { RoomUpdatedPayload, WsMessage } from "../src/messages";
+import { RoomError, RoomManager } from "../src/roomManager";
 
 function listen(app: ReturnType<typeof createAppServer>): Promise<number> {
   return new Promise((resolve) => {
@@ -142,5 +143,107 @@ describe("front-back WebSocket integration", () => {
         message.type === "danmaku:updated"
     );
     expect(danmakuUpdated.payload.danmaku).toHaveLength(1);
+  });
+});
+
+describe("retail tool server handling", () => {
+  function startRoomWithRetailPlayer(): { manager: RoomManager; roomId: string; stockId: string } {
+    const manager = new RoomManager(() => 0);
+    const lobby = manager.createRoom("conn-1", "主力位");
+    manager.joinRoom("conn-2", lobby.id, "韭菜位");
+    const started = manager.startGame("conn-1", lobby.id);
+    const stockId = started.market?.sectors?.[0]?.stocks[0]?.id;
+    if (stockId === undefined) {
+      throw new Error("Expected started room to contain a stock.");
+    }
+    return { manager, roomId: started.id, stockId };
+  }
+
+  it("rejects retail tools from institution players", () => {
+    const { manager, stockId } = startRoomWithRetailPlayer();
+
+    expect(() =>
+      manager.recordPlayerAction("conn-1", {
+        actionType: "retailTool",
+        action: "QUANT_SNIFFER",
+        stockId,
+        toolType: "QUANT_SNIFFER"
+      })
+    ).toThrow(RoomError);
+  });
+
+  it("applies warning danmaku effects and writes a retail tool log", () => {
+    const { manager, stockId } = startRoomWithRetailPlayer();
+
+    const updated = manager.recordPlayerAction("conn-2", {
+      actionType: "retailTool",
+      action: "WARNING_DANMAKU",
+      stockId,
+      toolType: "WARNING_DANMAKU",
+      warningType: "WARN_T_PLUS_ONE"
+    });
+    const stock = updated.market?.sectors?.flatMap((sector) => sector.stocks).find((item) => item.id === stockId);
+    const log = updated.logs.at(-1);
+
+    expect(stock?.retailWarningPower).toBeGreaterThan(0);
+    expect(log?.type).toBe("retail:toolAction");
+    expect(log?.payload).toMatchObject({
+      playerId: expect.any(String),
+      stockId,
+      toolType: "WARNING_DANMAKU",
+      warningType: "WARN_T_PLUS_ONE"
+    });
+  });
+
+  it("records leek radar highest-risk stock summaries", () => {
+    const { manager } = startRoomWithRetailPlayer();
+
+    const updated = manager.recordPlayerAction("conn-2", {
+      actionType: "retailTool",
+      action: "LEEK_RADAR",
+      toolType: "LEEK_RADAR"
+    });
+    const log = updated.logs.at(-1);
+
+    expect(log?.type).toBe("retail:toolAction");
+    expect(log?.payload).toMatchObject({
+      toolType: "LEEK_RADAR",
+      effects: {
+        watchedStocks: expect.arrayContaining([
+          expect.objectContaining({
+            stockId: expect.any(String),
+            overheatRisk: expect.any(Number),
+            riskFlags: expect.any(Array)
+          })
+        ])
+      }
+    });
+  });
+
+  it("records quant sniffer readings without changing the target price", () => {
+    const { manager, stockId } = startRoomWithRetailPlayer();
+    const before = manager.getRoom(manager.getSession("conn-2")!.roomId)!;
+    const beforeStock = before.market?.sectors?.flatMap((sector) => sector.stocks).find((item) => item.id === stockId);
+
+    const updated = manager.recordPlayerAction("conn-2", {
+      actionType: "retailTool",
+      action: "QUANT_SNIFFER",
+      stockId,
+      toolType: "QUANT_SNIFFER"
+    });
+    const afterStock = updated.market?.sectors?.flatMap((sector) => sector.stocks).find((item) => item.id === stockId);
+    const log = updated.logs.at(-1);
+
+    expect(afterStock?.changePercent).toBe(beforeStock?.changePercent);
+    expect(log?.type).toBe("retail:toolAction");
+    expect(log?.payload).toMatchObject({
+      toolType: "QUANT_SNIFFER",
+      effects: {
+        quantAttention: expect.any(Number),
+        crowdedness: expect.any(Number),
+        tPlusOneCrowdedness: expect.any(Number),
+        overheatRisk: expect.any(Number)
+      }
+    });
   });
 });

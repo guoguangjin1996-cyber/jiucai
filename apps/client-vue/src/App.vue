@@ -409,10 +409,13 @@ const stockRiskLines = computed(() => {
   if (stock.regulationAttention >= 70) {
     lines.push("盘面太抽象，监管开始眯眼。");
   }
+  if ((stock.riskFlags ?? []).includes("高危收割区")) {
+    lines.push("高危收割区已形成，后排玩家请系好安全带。");
+  }
   return lines.length > 0 ? lines : ["虚构盘面暂时没冒红灯，但嘴硬也要看路。"];
 });
 
-const canUseRetailTools = computed(() => !isInstitutionView.value && selectedStock.value !== undefined);
+const canUseRetailTools = computed(() => selfPlayer.value?.role === "retail" && selectedStock.value !== undefined);
 
 const latestLogs = computed(() => [...(room.value?.logs ?? [])].slice(-4).reverse());
 const latestDanmaku = computed(() => [...(room.value?.danmaku ?? [])].slice(-5).reverse());
@@ -862,7 +865,7 @@ function signedNumber(value: number | undefined): string {
             <div class="risk-lines">
               <p v-for="line in stockRiskLines" :key="line">{{ line }}</p>
             </div>
-            <div v-if="!isInstitutionView" class="detail-tools">
+            <div v-if="selfPlayer?.role === 'retail'" class="detail-tools">
               <p v-if="selectedStock === undefined" class="tool-hint">请先选择一只纳音票</p>
               <div class="tool-grid">
                 <button
@@ -946,7 +949,7 @@ function signedNumber(value: number | undefined): string {
           </div>
           <p v-if="actionGroups.length === 0">{{ panicLine }}</p>
 
-          <div v-if="!isInstitutionView" class="retail-toolbox">
+          <div v-if="selfPlayer?.role === 'retail'" class="retail-toolbox">
             <div class="tool-grid">
               <button
                 v-for="item in retailToolButtons"

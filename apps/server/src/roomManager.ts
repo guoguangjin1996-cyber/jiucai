@@ -13,6 +13,8 @@ import {
   type MarketPhase,
   type OffMarketActionType,
   type QuantStrategy,
+  type RetailToolType,
+  type RetailWarningDanmakuType,
   type StockMarketState,
   INITIAL_RETAIL_CAPITAL,
   INITIAL_CONFIDENCE,
@@ -173,6 +175,28 @@ const OFF_MARKET_ACTION_COSTS: Record<
   REGULATION_PR: { influenceBudgetCost: 35, controlPointCost: 2, regulationHeatDelta: -10 },
   MISLEAD_QUANT: { influenceBudgetCost: 40, controlPointCost: 2, quantAttentionDelta: -10 }
 };
+
+const RETAIL_TOOL_LABELS: Record<RetailToolType, string> = {
+  LEEK_RADAR: "韭菜雷达",
+  T_PLUS_ONE_BELT: "T+1安全带",
+  AUCTION_920_ALARM: "9:20闹钟",
+  WARNING_DANMAKU: "预警弹幕",
+  FAKE_ORDER_MIRROR: "假单照妖镜",
+  QUANT_SNIFFER: "量化闻味器",
+  CORE_THERMOMETER: "中军体温计",
+  COOL_DOWN_CONFIRM: "冷静三秒"
+};
+
+const RETAIL_WARNING_LABELS: Record<RetailWarningDanmakuType, string> = {
+  WARN_RISK: "提醒风险",
+  CALLOUT_FAKE_ORDER: "质疑假封单",
+  WARN_T_PLUS_ONE: "提醒T+1",
+  WARN_QUANT: "提醒量化",
+  WARN_CORE_DIVE: "提醒中军跳水",
+  QUESTION_HYPE: "质疑水军"
+};
+
+const GLOBAL_RETAIL_TOOLS = new Set<RetailToolType>(["LEEK_RADAR"]);
 
 export class RoomError extends Error {
   constructor(
@@ -865,6 +889,10 @@ export class RoomManager {
       return this.recordOffMarketAction(room, player, payload, now);
     }
 
+    if (payload.actionType === "retailTool") {
+      return this.recordRetailToolAction(room, player, payload, now);
+    }
+
     if (this.isIntradayAction(payload.action)) {
       return this.markPlayerSubmitted(
         this.recordIntradayAction(room, player, payload, now),
@@ -1246,6 +1274,71 @@ export class RoomManager {
     return actionPayload;
   }
 
+  private recordRetailToolAction(
+    room: RoomSnapshot,
+    player: RoomPlayer,
+    payload: SubmitActionPayload,
+    timestamp: number
+  ): RoomSnapshot {
+    if (player.role !== "retail") {
+      throw new RoomError("RETAIL_ONLY", "只有韭菜玩家可以使用韭菜工具。");
+    }
+
+    const toolType = this.resolveRetailToolType(payload);
+    if (toolType === undefined) {
+      throw new RoomError(
+        payload.toolType === undefined && payload.action.trim().length === 0
+          ? "RETAIL_TOOL_REQUIRED"
+          : "INVALID_RETAIL_TOOL",
+        "未知韭菜工具。"
+      );
+    }
+
+    const warningType = payload.warningType;
+    if (toolType === "WARNING_DANMAKU" && warningType === undefined) {
+      throw new RoomError("WARNING_TYPE_REQUIRED", "预警弹幕需要 warningType。");
+    }
+    if (warningType !== undefined && !this.isRetailWarningType(warningType)) {
+      throw new RoomError("WARNING_TYPE_REQUIRED", "未知预警弹幕类型。");
+    }
+
+    if (!GLOBAL_RETAIL_TOOLS.has(toolType) && (payload.stockId === undefined || payload.stockId.trim().length === 0)) {
+      throw new RoomError("STOCK_REQUIRED", "韭菜工具需要 stockId。");
+    }
+
+    const stockInfo = payload.stockId === undefined ? undefined : this.findStockInRoom(room, payload.stockId);
+    if (payload.stockId !== undefined && stockInfo === undefined) {
+      throw new RoomError("STOCK_NOT_FOUND", "目标股票不存在。");
+    }
+
+    const result = this.applyRetailToolEffect(room, player, toolType, stockInfo, warningType);
+    const targetName = stockInfo?.stock.name ?? "全市场风险扫描";
+    const updatedRoom = this.updateRoom(room.id, {
+      ...room,
+      ...(result.market === undefined ? {} : { market: result.market }),
+      logs: [
+        ...room.logs,
+        this.createLog({
+          timestamp,
+          day: room.day,
+          phase: room.phase,
+          type: "retail:toolAction",
+          message: `${player.nickname} 使用${RETAIL_TOOL_LABELS[toolType]}，目标 ${targetName}。${result.summary}`,
+          payload: {
+            playerId: player.id,
+            stockId: stockInfo?.stock.id,
+            toolType,
+            ...(warningType === undefined ? {} : { warningType }),
+            effects: result.effects
+          }
+        })
+      ],
+      updatedAt: timestamp
+    });
+
+    return this.cloneRoom(updatedRoom);
+  }
+
   private recordInstitutionMarketAction(
     room: RoomSnapshot,
     player: RoomPlayer,
@@ -1375,6 +1468,281 @@ export class RoomManager {
 
   private isOffMarketAction(action: string): action is OffMarketActionType {
     return Object.prototype.hasOwnProperty.call(OFF_MARKET_ACTION_COSTS, action);
+  }
+
+  private resolveRetailToolType(payload: SubmitActionPayload): RetailToolType | undefined {
+    if (payload.toolType !== undefined && this.isRetailToolType(payload.toolType)) {
+      return payload.toolType;
+    }
+    if (this.isRetailToolType(payload.action)) {
+      return payload.action;
+    }
+    return undefined;
+  }
+
+  private isRetailToolType(value: string): value is RetailToolType {
+    return Object.prototype.hasOwnProperty.call(RETAIL_TOOL_LABELS, value);
+  }
+
+  private isRetailWarningType(value: string): value is RetailWarningDanmakuType {
+    return Object.prototype.hasOwnProperty.call(RETAIL_WARNING_LABELS, value);
+  }
+
+  private applyRetailToolEffect(
+    room: RoomSnapshot,
+    player: RoomPlayer,
+    toolType: RetailToolType,
+    stockInfo: { stock: StockMarketState; sector: ElementSectorState } | undefined,
+    warningType: RetailWarningDanmakuType | undefined
+  ): {
+    market?: NonNullable<RoomSnapshot["market"]> | undefined;
+    summary: string;
+    effects: Record<string, unknown>;
+  } {
+    if (room.market === undefined) {
+      return {
+        summary: "市场尚未开盘，仅记录工具尝试。",
+        effects: { skipped: "market_not_ready" }
+      };
+    }
+
+    if (toolType === "LEEK_RADAR") {
+      const watchedStocks = (room.market.sectors ?? [])
+        .flatMap((sector) => sector.stocks)
+        .map((stock) => ({
+          stockId: stock.id,
+          stockName: stock.name,
+          overheatRisk: stock.overheatRisk ?? 0,
+          riskFlags: stock.riskFlags ?? [],
+          quantAttention: stock.quantAttention,
+          tPlusOneCrowdedness: stock.tPlusOneCrowdedness,
+          regulationAttention: stock.regulationAttention
+        }))
+        .sort((left, right) => this.retailRadarRiskScore(right) - this.retailRadarRiskScore(left))
+        .slice(0, 5);
+      const top = watchedStocks[0];
+      return {
+        summary:
+          top === undefined
+            ? "韭菜雷达没有扫到纳音票。"
+            : `雷达摘要：${top.stockName} 风险最高，过热 ${top.overheatRisk}，量化 ${top.quantAttention}，T+1 ${top.tPlusOneCrowdedness}。`,
+        effects: { watchedStocks }
+      };
+    }
+
+    if (stockInfo === undefined) {
+      throw new RoomError("STOCK_REQUIRED", "韭菜工具需要 stockId。");
+    }
+
+    if (toolType === "QUANT_SNIFFER") {
+      return {
+        summary: `量化闻味器读数：量化 ${stockInfo.stock.quantAttention}，拥挤 ${stockInfo.stock.crowdedness}，T+1 ${stockInfo.stock.tPlusOneCrowdedness}，过热 ${stockInfo.stock.overheatRisk ?? 0}。`,
+        effects: {
+          quantAttention: stockInfo.stock.quantAttention,
+          crowdedness: stockInfo.stock.crowdedness,
+          tPlusOneCrowdedness: stockInfo.stock.tPlusOneCrowdedness,
+          overheatRisk: stockInfo.stock.overheatRisk ?? 0
+        }
+      };
+    }
+
+    if (toolType === "FAKE_ORDER_MIRROR") {
+      const fakeOrderRisk = this.clampScore(
+        stockInfo.stock.boardStrength * 0.45 +
+          stockInfo.stock.boardBreakRisk * 0.35 +
+          stockInfo.stock.regulationAttention * 0.2
+      );
+      const auctionRisk = room.phase === "AUCTION_FREE" || room.phase === "AUCTION_LOCKED";
+      return {
+        market: this.updateRetailToolTarget(room, stockInfo.stock.id, {
+          retailWarningPowerDelta: auctionRisk ? 6 : 4
+        }),
+        summary: `假单照妖镜读数：封板 ${stockInfo.stock.boardStrength}，炸板 ${stockInfo.stock.boardBreakRisk}，监管 ${stockInfo.stock.regulationAttention}${auctionRisk ? "，集合竞价假封单风险已记录" : ""}。`,
+        effects: {
+          fakeOrderRisk,
+          boardStrength: stockInfo.stock.boardStrength,
+          boardBreakRisk: stockInfo.stock.boardBreakRisk,
+          regulationAttention: stockInfo.stock.regulationAttention,
+          retailWarningPowerDelta: auctionRisk ? 6 : 4,
+          auctionFakeOrderRisk: auctionRisk
+        }
+      };
+    }
+
+    if (toolType === "CORE_THERMOMETER") {
+      return this.applyCoreThermometerEffect(room, stockInfo.sector, stockInfo.stock);
+    }
+
+    if (toolType === "WARNING_DANMAKU") {
+      if (warningType === undefined) {
+        throw new RoomError("WARNING_TYPE_REQUIRED", "预警弹幕需要 warningType。");
+      }
+      return this.applyWarningDanmakuEffect(room, stockInfo, warningType);
+    }
+
+    if (toolType === "T_PLUS_ONE_BELT") {
+      const risky = stockInfo.stock.tPlusOneCrowdedness >= 70;
+      return {
+        summary: risky ? "T+1安全带提示：大家都在车上，但车门明天才开。" : "T+1安全带已记录冷静提醒。",
+        effects: {
+          passive: true,
+          tPlusOneCrowdedness: stockInfo.stock.tPlusOneCrowdedness,
+          riskHint: risky
+        }
+      };
+    }
+
+    if (toolType === "AUCTION_920_ALARM") {
+      const active = room.phase === "AUCTION_FREE";
+      return {
+        summary: active ? "9:20锁单提醒已记录。" : "9:20闹钟已记录，当前不是集合竞价自由撤单阶段。",
+        effects: {
+          passive: true,
+          phase: room.phase,
+          lockReminder: active
+        }
+      };
+    }
+
+    return {
+      summary: "冷静三秒确认已记录，价格不变。",
+      effects: {
+        passive: true,
+        coolDownConfirmed: true
+      }
+    };
+  }
+
+  private applyWarningDanmakuEffect(
+    room: RoomSnapshot,
+    stockInfo: { stock: StockMarketState; sector: ElementSectorState },
+    warningType: RetailWarningDanmakuType
+  ): {
+    market?: NonNullable<RoomSnapshot["market"]> | undefined;
+    summary: string;
+    effects: Record<string, unknown>;
+  } {
+    const effectsByType: Record<
+      RetailWarningDanmakuType,
+      {
+        retailWarningPowerDelta: number;
+        overheatRiskDelta?: number;
+        tPlusOneCrowdednessDelta?: number;
+        quantAttentionDelta?: number;
+        boardBreakRiskDelta?: number;
+        regulationAttentionDelta?: number;
+        crowdednessDelta?: number;
+        mainForceHypePowerDelta?: number;
+        noisePowerDelta?: number;
+      }
+    > = {
+      WARN_RISK: { retailWarningPowerDelta: 8, overheatRiskDelta: -4 },
+      WARN_T_PLUS_ONE: { retailWarningPowerDelta: 10, tPlusOneCrowdednessDelta: -4, overheatRiskDelta: -5 },
+      WARN_QUANT:
+        stockInfo.stock.quantAttention >= 70
+          ? { retailWarningPowerDelta: 10, quantAttentionDelta: -5, overheatRiskDelta: -5 }
+          : { retailWarningPowerDelta: 10 },
+      CALLOUT_FAKE_ORDER:
+        room.phase === "AUCTION_FREE" || room.phase === "AUCTION_LOCKED"
+          ? {
+              retailWarningPowerDelta: 10,
+              boardBreakRiskDelta: 3,
+              regulationAttentionDelta: 3,
+              crowdednessDelta: -4
+            }
+          : { retailWarningPowerDelta: 10 },
+      WARN_CORE_DIVE: { retailWarningPowerDelta: 8 },
+      QUESTION_HYPE: { retailWarningPowerDelta: 6, mainForceHypePowerDelta: -4, noisePowerDelta: -2 }
+    };
+
+    const effect = effectsByType[warningType];
+    if (warningType === "WARN_CORE_DIVE") {
+      const market = this.updateSectorStocksForRetailTool(room, stockInfo.sector.element, (stock) =>
+        stock.id === stockInfo.stock.id
+          ? this.applyStockEffect(stock, effect)
+          : stock.tags.includes("后排")
+            ? this.applyStockEffect(stock, { crowdednessDelta: -5, overheatRiskDelta: -5 })
+            : stock
+      );
+      return {
+        market,
+        summary: `${RETAIL_WARNING_LABELS[warningType]}已扩散，同板块后排票降温。`,
+        effects: { warningType, ...effect, backRowCrowdednessDelta: -5, backRowOverheatRiskDelta: -5 }
+      };
+    }
+
+    return {
+      market: this.updateRetailToolTarget(room, stockInfo.stock.id, effect),
+      summary: `${RETAIL_WARNING_LABELS[warningType]}已写入弹幕，韭菜预警力提升。`,
+      effects: { warningType, ...effect }
+    };
+  }
+
+  private applyCoreThermometerEffect(
+    room: RoomSnapshot,
+    sector: ElementSectorState,
+    targetStock: StockMarketState
+  ): {
+    market?: NonNullable<RoomSnapshot["market"]> | undefined;
+    summary: string;
+    effects: Record<string, unknown>;
+  } {
+    const coreStock =
+      sector.stocks.find((stock) => stock.tags.includes("中军")) ??
+      sector.stocks
+        .slice()
+        .sort((left, right) => right.liquidity - right.volatility - (left.liquidity - left.volatility))[0];
+    const coreWeak = coreStock !== undefined && (coreStock.changePercent <= -2 || coreStock.boardBreakRisk >= 70);
+    if (!coreWeak) {
+      return {
+        summary: `中军体温计读数：${coreStock?.name ?? targetStock.name} 暂未明显走弱。`,
+        effects: {
+          element: sector.element,
+          coreStockId: coreStock?.id,
+          coreWeak: false
+        }
+      };
+    }
+
+    const market = this.updateSectorStocksForRetailTool(room, sector.element, (stock) =>
+      stock.tags.includes("后排")
+        ? this.applyStockEffect(stock, {
+            crowdednessDelta: -5,
+            overheatRiskDelta: -5,
+            retailWarningPowerDelta: 6
+          })
+        : stock.id === targetStock.id
+          ? this.applyStockEffect(stock, { retailWarningPowerDelta: 6 })
+          : stock
+    );
+    return {
+      market,
+      summary: `中军体温计读数：${coreStock.name} 走弱，同板块后排已降温。`,
+      effects: {
+        element: sector.element,
+        coreStockId: coreStock.id,
+        coreWeak: true,
+        backRowCrowdednessDelta: -5,
+        backRowOverheatRiskDelta: -5,
+        retailWarningPowerDelta: 6
+      }
+    };
+  }
+
+  private retailRadarRiskScore(stock: {
+    overheatRisk: number;
+    quantAttention: number;
+    tPlusOneCrowdedness: number;
+    regulationAttention: number;
+    riskFlags: string[];
+  }): number {
+    return Math.max(
+      stock.overheatRisk,
+      stock.quantAttention,
+      stock.tPlusOneCrowdedness,
+      stock.regulationAttention,
+      stock.riskFlags.length * 20
+    );
   }
 
   private getInstitutionResourceOrThrow(room: RoomSnapshot, player: RoomPlayer): InstitutionPlayerState {
@@ -1526,7 +1894,64 @@ export class RoomManager {
         : {
             sectors,
             rankings: resolveMarketRankings(resolveSectorStatusTags(resolveStockTags(sectors)))
-          })
+      })
+    };
+  }
+
+  private updateRetailToolTarget(
+    room: RoomSnapshot,
+    stockId: string,
+    effect: Parameters<RoomManager["applyStockEffect"]>[1]
+  ): NonNullable<RoomSnapshot["market"]> | undefined {
+    if (room.market === undefined) {
+      return undefined;
+    }
+
+    const sectors = room.market.sectors?.map((sector) => ({
+      ...sector,
+      stocks: sector.stocks.map((stock) => (stock.id === stockId ? this.applyStockEffect(stock, effect) : stock))
+    }));
+
+    return this.withUpdatedMarketSectors(room, sectors);
+  }
+
+  private updateSectorStocksForRetailTool(
+    room: RoomSnapshot,
+    element: ElementSectorState["element"],
+    update: (stock: StockMarketState) => StockMarketState
+  ): NonNullable<RoomSnapshot["market"]> | undefined {
+    if (room.market === undefined) {
+      return undefined;
+    }
+
+    const sectors = room.market.sectors?.map((sector) =>
+      sector.element === element
+        ? {
+            ...sector,
+            stocks: sector.stocks.map((stock) => update(stock))
+          }
+        : sector
+    );
+
+    return this.withUpdatedMarketSectors(room, sectors);
+  }
+
+  private withUpdatedMarketSectors(
+    room: RoomSnapshot,
+    sectors: ElementSectorState[] | undefined
+  ): NonNullable<RoomSnapshot["market"]> | undefined {
+    if (room.market === undefined) {
+      return undefined;
+    }
+    if (sectors === undefined) {
+      return room.market;
+    }
+
+    const taggedSectors = resolveSectorStatusTags(resolveStockTags(sectors));
+    return {
+      ...room.market,
+      sectors: taggedSectors,
+      rankings: resolveMarketRankings(taggedSectors)
     };
   }
 
@@ -1542,6 +1967,9 @@ export class RoomManager {
       boardBreakRiskDelta?: number | undefined;
       changePercentDelta?: number | undefined;
       mainForceHypePowerDelta?: number | undefined;
+      retailWarningPowerDelta?: number | undefined;
+      overheatRiskDelta?: number | undefined;
+      noisePowerDelta?: number | undefined;
     }
   ): StockMarketState {
     const updated: StockMarketState = {
@@ -1562,6 +1990,19 @@ export class RoomManager {
         0,
         100
       );
+    }
+    if (stock.retailWarningPower !== undefined || effect.retailWarningPowerDelta !== undefined) {
+      updated.retailWarningPower = clampNumber(
+        (stock.retailWarningPower ?? 0) + (effect.retailWarningPowerDelta ?? 0),
+        0,
+        100
+      );
+    }
+    if (stock.overheatRisk !== undefined || effect.overheatRiskDelta !== undefined) {
+      updated.overheatRisk = clampNumber((stock.overheatRisk ?? 0) + (effect.overheatRiskDelta ?? 0), 0, 100);
+    }
+    if (stock.noisePower !== undefined || effect.noisePowerDelta !== undefined) {
+      updated.noisePower = clampNumber((stock.noisePower ?? 0) + (effect.noisePowerDelta ?? 0), 0, 100);
     }
 
     return updated;
