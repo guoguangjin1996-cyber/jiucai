@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>韭菜保卫战 Web Mock Preview</title>
+    <style>
+      :root {
+        --sky: #ddf5ff;
+        --cream: #fff8e8;
+        --mint: #eaf8e9;
+        --purple-bg: #f3eafe;
+        --panel: #fffdf7;
+        --ink: #2f2a25;
+        --sub: #7b756e;
+        --line: #e7dcc8;
+        --green: #6fd28c;
+        --deep-green: #2f8d59;
+        --red: #ff7d7d;
+        --deep-red: #e14f59;
+        --blue: #72b8ff;
+        --purple: #a98bff;
+        --deep-purple: #6f4bd9;
+        --yellow: #ffd76a;
+        --orange: #ffb02e;
+        --shadow: 0 12px 26px rgba(66, 47, 29, 0.12);
+      }
+
+      * { box-sizing: border-box; }
+      html { background: var(--sky); }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+        background:
+          radial-gradient(circle at 12% 11%, rgba(255, 255, 255, 0.95) 0 56px, transparent 58px),
+          radial-gradient(circle at 86% 10%, rgba(255, 255, 255, 0.82) 0 72px, transparent 74px),
+          linear-gradient(180deg, #d9f4ff 0%, #fff9e9 58%, #e8f7dc 100%);
+      }
+
+      button, input, textarea { font: inherit; }
+      button { color: inherit; }
+
+      .shell {
+        width: min(1680px, 100%);
+        margin: 0 auto;
+        padding: 18px;
+      }
+
+      .hero-board {
+        min-height: 118px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 18px;
+        align-items: center;
+        margin-bottom: 16px;
+        padding: 18px 24px;
+        border: 3px solid rgba(111, 75, 217, 0.18);
+        border-radius: 28px;
+        background:
+          radial-gradient(circle at 74% 40%, rgba(255, 215, 106, 0.32), transparent 140px),
+          linear-gradient(100deg, rgba(255, 255, 255, 0.92), rgba(243, 234, 254, 0.84));
+        box-shadow: var(--shadow);
+      }
+
+      .brand-row {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+      }
+
+      .logo-leek {
+        width: 72px;
+        height: 78px;
+        position: relative;
+        flex: none;
+      }
+
+      .leek-body, .boss-body, .monster-body {
+        position: absolute;
+        inset: 22px 6px 0;
+        border: 4px solid rgba(47, 42, 37, 0.2);
+        border-radius: 48% 48% 38% 38%;
+        background: #fff;
+        box-shadow: inset 0 -8px 0 rgba(0, 0, 0, 0.06);
+      }
+
+      .logo-leek::before,
+      .logo-leek::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        width: 25px;
+        height: 45px;
+        border-radius: 22px 22px 7px 7px;
+        background: #87d96a;
+        border: 4px solid #4e8c35;
+        z-index: 2;
+      }
+
+      .logo-leek::before { left: 16px; transform: rotate(-23deg); }
+      .logo-leek::after { right: 16px; transform: rotate(23deg); }
+
+      .cry-face::before, .cry-face::after {
+        content: "";
+        position: absolute;
+        top: 45px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--ink);
+        z-index: 4;
+      }
+
+      .cry-face::before { left: 26px; }
+      .cry-face::after { right: 26px; }
+
+      .cry-face span {
+        position: absolute;
+        left: 29px;
+        top: 56px;
+        width: 14px;
+        height: 10px;
+        border-radius: 50%;
+        border-bottom: 5px solid var(--ink);
+        z-index: 4;
+      }
+
+      h1, h2, h3, p { margin-top: 0; }
+      h1 {
+        margin-bottom: 6px;
+        font-size: clamp(34px, 4vw, 64px);
+        line-height: 1;
+        letter-spacing: 0;
+        color: var(--deep-purple);
+        text-shadow: 0 4px 0 rgba(255, 255, 255, 0.9);
+      }
+
+      .subtitle {
+        margin: 0;
+        font-size: 20px;
+        color: var(--deep-purple);
+        font-weight: 800;
+      }
+
+      .tag-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .tag {
+        min-width: 86px;
+        padding: 9px 13px;
+        border: 2px solid rgba(111, 75, 217, 0.22);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.8);
+        color: var(--sub);
+        text-align: center;
+        font-weight: 700;
+      }
+
+      .board {
+        display: grid;
+        grid-template-columns: 396px 1fr;
+        gap: 18px;
+        align-items: start;
+      }
+
+      .phone {
+        min-height: 850px;
+        border-radius: 30px;
+        border: 4px solid rgba(47, 42, 37, 0.16);
+        background: var(--cream);
+        overflow: hidden;
+        box-shadow: var(--shadow);
+      }
+
+      .workspace {
+        min-height: 850px;
+        padding: 18px;
+        border-radius: 28px;
+        border: 3px solid rgba(111, 75, 217, 0.16);
+        background: rgba(255, 255, 255, 0.72);
+        box-shadow: var(--shadow);
+      }
+
+      .screen {
+        min-height: 850px;
+        padding: 16px;
+      }
+
+      .landing {
+        background:
+          radial-gradient(circle at 75% 12%, #fff2a1 0 38px, transparent 41px),
+          linear-gradient(180deg, var(--sky), #f2ffe9 78%);
+      }
+
+      .room, .result, .retail-screen { background: var(--cream); }
+      .institution-screen { background: var(--purple-bg); }
+
+      .side-mini {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .title-block {
+        text-align: center;
+        margin: 8px 0 14px;
+      }
+
+      .title-block h2 {
+        margin: 0;
+        font-size: 44px;
+        line-height: 1.05;
+        color: var(--deep-green);
+        text-shadow: 0 4px 0 #fff;
+      }
+
+      .title-block p {
+        margin: 8px 0 0;
+        color: var(--sub);
+        font-weight: 700;
+      }
+
+      .mascot-scene {
+        min-height: 222px;
+        display: grid;
+        place-items: center;
+        margin: 8px 0 14px;
+        border-radius: 24px;
+        border: 2px solid rgba(111, 75, 217, 0.12);
+        background:
+          radial-gradient(circle at 52% 72%, rgba(111, 75, 217, 0.08), transparent 130px),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(111, 210, 140, 0.16));
+        position: relative;
+      }
+
+      .grass {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 70px;
+        border-radius: 0 0 22px 22px;
+        background: linear-gradient(180deg, #bbed91, #7fcf79);
+      }
+
+      .k-monster {
+        width: 132px;
+        height: 126px;
+        position: relative;
+        border-radius: 18px;
+        border: 5px solid #48783a;
+        background: linear-gradient(180deg, #8dd973, #48b267);
+        z-index: 2;
+        box-shadow: 0 10px 0 rgba(0, 0, 0, 0.06);
+      }
+
+      .k-monster::before {
+        content: "";
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        top: 38px;
+        height: 18px;
+        background: repeating-linear-gradient(90deg, var(--red) 0 13px, var(--green) 13px 26px);
+      }
+
+      .k-monster::after {
+        content: "";
+        position: absolute;
+        left: 42px;
+        bottom: 27px;
+        width: 48px;
+        height: 18px;
+        border-radius: 0 0 20px 20px;
+        background: var(--ink);
+      }
+
+      .speech {
+        position: absolute;
+        max-width: 138px;
+        padding: 9px 12px;
+        border: 2px solid var(--line);
+        border-radius: 20px;
+        background: #fff;
+        font-weight: 800;
+        font-size: 14px;
+      }
+
+      .speech.left { left: 18px; top: 52px; }
+      .speech.right { right: 18px; top: 38px; }
+
+      .jelly {
+        border: 0;
+        border-radius: 18px;
+        min-height: 54px;
+        padding: 10px 14px;
+        font-weight: 900;
+        cursor: pointer;
+        box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.12), 0 6px 12px rgba(47, 42, 37, 0.08);
+        transition: transform 0.12s ease, filter 0.12s ease;
+      }
+
+      .jelly:hover { transform: translateY(-2px); filter: saturate(1.06); }
+      .jelly:active { transform: translateY(1px); }
+      .green { background: var(--green); }
+      .red { background: var(--red); }
+      .blue { background: var(--blue); }
+      .purple { background: var(--purple); }
+      .yellow { background: var(--yellow); }
+      .soft { background: var(--panel); border: 2px solid var(--line); }
+
+      .stack { display: grid; gap: 11px; }
+      .row { display: flex; gap: 10px; align-items: center; }
+      .row > * { flex: 1; }
+
+      .card {
+        border: 2px solid var(--line);
+        border-radius: 18px;
+        background: rgba(255, 253, 247, 0.9);
+        padding: 13px;
+        box-shadow: 0 6px 14px rgba(47, 42, 37, 0.05);
+      }
+
+      .card h3 {
+        margin: 0 0 8px;
+        font-size: 19px;
+      }
+
+      .card p, .card li {
+        color: var(--sub);
+        line-height: 1.55;
+        margin: 4px 0;
+      }
+
+      .seat-ring {
+        position: relative;
+        height: 430px;
+        border-radius: 50%;
+        margin: 10px 0;
+        background:
+          radial-gradient(circle, rgba(111, 210, 140, 0.16) 0 35%, transparent 36%),
+          repeating-radial-gradient(circle, transparent 0 62px, rgba(111, 210, 140, 0.22) 63px 65px);
+      }
+
+      .seat-center {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 160px;
+        transform: translate(-50%, -50%);
+        padding: 18px;
+        border: 2px solid var(--line);
+        border-radius: 22px;
+        background: #fff;
+        text-align: center;
+        font-weight: 900;
+      }
+
+      .seat {
+        position: absolute;
+        width: 94px;
+        padding: 8px 4px;
+        border: 2px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel);
+        text-align: center;
+        font-size: 12px;
+      }
+
+      .seat .avatar {
+        width: 44px;
+        height: 44px;
+        margin: 0 auto 4px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--green);
+        border: 3px solid rgba(47, 42, 37, 0.13);
+        font-weight: 900;
+      }
+
+      .seat.bot .avatar { background: #dce8ef; }
+      .seat.s1 { left: 138px; top: 10px; }
+      .seat.s2 { right: 12px; top: 76px; }
+      .seat.s3 { right: 20px; bottom: 84px; }
+      .seat.s4 { left: 140px; bottom: 10px; }
+      .seat.s5 { left: 18px; bottom: 84px; }
+      .seat.s6 { left: 12px; top: 76px; }
+      .seat.s7 { left: 46px; top: 210px; }
+      .seat.s8 { right: 46px; top: 210px; }
+
+      .phase-bar {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 6px;
+        margin: 10px 0;
+      }
+
+      .phase {
+        padding: 7px 3px;
+        border-radius: 999px;
+        background: #d9e2e5;
+        color: var(--sub);
+        font-size: 12px;
+        text-align: center;
+      }
+
+      .phase.active {
+        background: var(--green);
+        color: var(--ink);
+        font-weight: 900;
+      }
+
+      .chart {
+        width: 100%;
+        height: 204px;
+        border: 2px solid var(--line);
+        border-radius: 18px;
+        background: #fff;
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+
+      .metric {
+        padding: 10px;
+        border-radius: 16px;
+        background: #fff;
+        border: 2px solid rgba(231, 220, 200, 0.9);
+      }
+
+      .metric strong { display: block; font-size: 22px; }
+      .profit { color: var(--deep-red); }
+      .loss { color: var(--deep-green); }
+
+      .actions-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 9px;
+      }
+
+      .bottom-nav {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 7px;
+        margin-top: 12px;
+        padding-top: 10px;
+        border-top: 2px solid rgba(231, 220, 200, 0.7);
+      }
+
+      .bottom-nav.six { grid-template-columns: repeat(3, 1fr); }
+
+      .workspace-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .preview {
+        min-height: 252px;
+        overflow: hidden;
+      }
+
+      .preview h3 {
+        color: var(--deep-purple);
+      }
+
+      .mini-phone {
+        border-radius: 18px;
+        border: 2px solid rgba(111, 75, 217, 0.18);
+        padding: 12px;
+        background: linear-gradient(180deg, #fff, #fffaf0);
+      }
+
+      .tool-list {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+
+      .bar {
+        height: 12px;
+        border-radius: 999px;
+        background: #e6dfef;
+        overflow: hidden;
+      }
+
+      .bar span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--purple), var(--blue));
+      }
+
+      .modal-layer {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(47, 42, 37, 0.4);
+        z-index: 10;
+      }
+
+      .modal-layer.active { display: flex; }
+
+      .page-card {
+        width: min(420px, 100%);
+        max-height: 92vh;
+        overflow: auto;
+        border: 4px solid rgba(47, 42, 37, 0.12);
+        border-radius: 26px;
+        background: var(--panel);
+        box-shadow: 0 24px 70px rgba(47, 42, 37, 0.28);
+      }
+
+      .page-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px 6px;
+      }
+
+      .icon-btn {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        border: 2px solid var(--line);
+        background: #fff;
+        font-size: 22px;
+        font-weight: 900;
+      }
+
+      .page-content {
+        padding: 10px 18px 18px;
+      }
+
+      .page-title {
+        text-align: center;
+        margin-bottom: 10px;
+      }
+
+      .page-title h2 {
+        margin: 0;
+        font-size: 36px;
+        color: var(--deep-red);
+      }
+
+      .page-title p {
+        margin: 7px 0 0;
+        color: var(--sub);
+        font-weight: 800;
+      }
+
+      .cute-panel {
+        min-height: 124px;
+        display: grid;
+        place-items: center;
+        margin: 10px 0;
+        border-radius: 20px;
+        background: linear-gradient(180deg, #fff6de, #fff);
+        border: 2px solid var(--line);
+        position: relative;
+      }
+
+      .tiny-leek {
+        width: 86px;
+        height: 104px;
+        position: relative;
+      }
+
+      .boss-figure {
+        width: 96px;
+        height: 110px;
+        position: relative;
+        border-radius: 42% 42% 34% 34%;
+        background: #4b3b5b;
+        border: 4px solid rgba(47, 42, 37, 0.2);
+      }
+
+      .boss-figure::before {
+        content: "";
+        position: absolute;
+        left: 14px;
+        right: 14px;
+        top: 34px;
+        height: 18px;
+        border-radius: 999px;
+        background: #161515;
+        box-shadow: 0 -26px 0 -9px var(--yellow);
+      }
+
+      .boss-figure::after {
+        content: "";
+        position: absolute;
+        left: 22px;
+        right: 22px;
+        bottom: 22px;
+        height: 15px;
+        border-radius: 999px;
+        background: var(--yellow);
+      }
+
+      .order-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        padding: 9px 0;
+        border-bottom: 1px dashed var(--line);
+      }
+
+      .dial {
+        height: 122px;
+        border-radius: 22px;
+        background:
+          conic-gradient(from 230deg, var(--green) 0 31%, var(--yellow) 31% 64%, var(--red) 64% 84%, transparent 84%),
+          #fff;
+        display: grid;
+        place-items: center;
+        border: 2px solid var(--line);
+        font-size: 36px;
+        font-weight: 900;
+        color: var(--deep-red);
+      }
+
+      .disclaimer {
+        margin-top: 12px;
+        padding: 10px 14px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.7);
+        color: var(--sub);
+        font-size: 13px;
+      }
+
+      @media (max-width: 1120px) {
+        .board, .workspace-grid { grid-template-columns: 1fr; }
+        .phone, .workspace, .screen { min-height: auto; }
+        .hero-board { grid-template-columns: 1fr; }
+        .tag-row { justify-content: flex-start; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="hero-board">
+        <div class="brand-row">
+          <div class="logo-leek"><div class="leek-body cry-face"><span></span></div></div>
+          <div>
+            <h1>韭菜保卫战</h1>
+            <p class="subtitle">小清新 x 抽象盘面 x ROI 生存局</p>
+          </div>
+        </div>
+        <div class="tag-row">
+          <span class="tag">2 主力</span>
+          <span class="tag">6 韭菜</span>
+          <span class="tag">5 交易日</span>
+          <span class="tag">ROI 排名</span>
+        </div>
+      </header>
+
+      <main class="board">
+        <section class="phone" id="phone"></section>
+        <section class="workspace">
+          <div class="workspace-grid" id="workspace"></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-layer" id="modalLayer">
+      <article class="page-card" id="pageCard"></article>
+    </div>
+
+    <script>
+      const state = {
+        role: "retail",
+        screen: "landing",
+        players: [
+          ["韭菜王（你）", "韭", "+78.6%", "12"],
+          ["原来是韭", "韭", "+32.1%", "20"],
+          ["主力一号", "主", "+18.8%", "64"],
+          ["格局打开", "韭", "+9.8%", "18"],
+          ["割肉小能手", "主", "-3.2%", "71"],
+          ["绿油油", "韭", "-8.6%", "45"],
+          ["Bot-06", "Bot", "-18.9%", "27"],
+          ["Bot-04", "Bot", "-26.4%", "34"]
+        ],
+        bullets: ["大佬带带我，冲冲冲！", "利好像棉花糖，甜但会粘手", "谁在带节奏？", "我是来学习虚构模拟的"]
+      };
+
+      const pageMeta = {
+        BUY: ["买入", "冲就完了！", "买入有风险，入局需谨慎。别问，问就是信仰。", "买入", "red"],
+        SELL: ["卖出", "跑得快才有未来！", "落袋为安，睡在下一根虚构 K 线。", "卖出", "green"],
+        CANCEL_ORDER: ["撤单", "后悔药警告！", "下错单不可怕，可怕的是锁单后才想起来。", "一键撤单", "yellow"],
+        FULL_POSITION: ["全仓", "全仓拉满警告！", "一键拉满，心跳拉满。别上头，别上头。", "全仓确认！", "red"],
+        HALF_POSITION: ["半仓", "稳一手！半仓走起～", "进可攻，退可守，不慌不忙。", "半仓确认", "green"],
+        ONE_THIRD_POSITION: ["1/3仓", "先试试水，别直接下海", "小步试探，活得更久。", "1/3仓下单", "blue"],
+        ONE_QUARTER_POSITION: ["1/4仓", "先伸一根脚趾进去", "保守一点，睡得更香。", "1/4仓下单", "blue"],
+        FINAL_CONFIRM: ["最终确认", "干就完了！！", "你确定吗？你真的确定吗？", "就是它！", "red"],
+        MINUTE: ["分时", "又上又下，主打一个心电图！", "模拟分时、涨跌停线、今日情绪指数与弹幕开关。", "关闭", "blue"],
+        TRADE_LIST: ["成交", "这里记录你每一次冲动。", "买入、卖出、成交价和沙雕标签全在这里。", "知道了", "yellow"],
+        ORDER_BOOK: ["盘口", "排队现场", "人太多了，挤不进去。要么排队，要么躺平。", "返回", "green"],
+        HOME: ["首页", "今天先活着", "今日目标、心情指数、提醒和小贴士。", "好嘞", "green"],
+        MARKET: ["行情", "绿得发慌也要可爱", "只展示虚构标的与虚构数值。", "返回", "blue"],
+        HOLDING: ["持仓", "T+1 锁住了小手", "持仓、浮动盈亏、今日仓状态和小贴士。", "格局一下", "yellow"],
+        COMMUNITY: ["社区", "全员嘴强王者", "热议话题、大V发言、玩家吐槽和弹幕评论。", "发帖", "purple"],
+        MINE: ["我的", "韭菜档案馆", "等级、韭菜值、勋章、装扮、战斗记录。", "收起档案", "green"],
+        MAIN_FORCE_CONSOLE: ["操盘台", "主力大佬在线操盘中", "今日战绩、实时盯盘、战术选择和 ROI 目标。", "战术确认", "purple"],
+        MARKET_MONITOR: ["市场监控", "全网盯盘中", "热度、情绪、警报、目标榜和舆情监控。", "继续盯盘", "purple"],
+        FUND_MANAGEMENT: ["资金管理", "钱不是万能的", "总资产、收益、资金分布、流水和理财计划。", "查看完毕", "purple"],
+        NETWORK: ["关系网络", "人脉就是钱脉", "游资大佬、财经大V、监管熟人与散户代表。", "收起网络", "purple"],
+        REGULATION_PR: ["监管公关", "危机？不存在的！", "监管风险值、公关能量、应对策略和热点降温。", "降温", "purple"],
+        POWER: ["我的势力", "建设你的韭菜帝国", "势力等级、建筑、小弟和升级预览。", "升级预览", "purple"],
+        MAIN_FORCE_FUND_CONTROL: ["资金操控", "一滑条，满屏戏", "买入堆单、突出出货、一键买入、一键卖出。", "执行演出", "purple"],
+        CHIP_DISTRIBUTION: ["筹码分布", "筹码像果冻一样晃", "筹码热力图、持仓结构、集中度和占比。", "关闭热力图", "purple"],
+        LIMIT_CONTROL: ["涨停控制", "封板方式：看起来很忙", "涨停控制台、跌停控制台、封单比例和计划。", "执行封板计划", "purple"],
+        MESSAGE_PUBLISH: ["消息发布", "话术发射器启动", "消息类型、发布范围、情绪强度和预期效果。", "发布消息", "purple"],
+        KOL_COOPERATION: ["大V合作", "嘴强合作计划", "大V 列表、影响力、合作费用和合作计划。", "合作计划", "purple"],
+        REGULATOR_RELATION: ["监管关系", "探头正在闪烁", "监管关系网、降温策略、甩锅策略和公关动作。", "装无辜", "purple"],
+        BLACK_ROOM_RECORD: ["小黑屋记录", "门口贴着虚构二字", "处罚记录、黑名单、申诉记录和今日小黑屋数据。", "一键清空小黑屋", "purple"]
+      };
+
+      const btn = (text, color, action) => `<button class="jelly ${color}" data-action="${action}">${text}</button>`;
+      const pageBtn = (text, color, key) => `<button class="jelly ${color}" data-page="${key}">${text}</button>`;
+
+      function chart(secret = false) {
+        const labels = secret ? ["吸筹阶段", "拉升阶段", "洗盘阶段", "出货阶段"] : ["假装拉升", "追高心跳", "韭菜跳水", "监管探头"];
+        return `<svg class="chart" viewBox="0 0 340 204">
+          <rect width="340" height="204" fill="#fffdf7"/>
+          <g stroke="#efe5d4" stroke-width="1"><path d="M0 42H340M0 82H340M0 122H340M0 162H340M68 0V204M136 0V204M204 0V204M272 0V204"/></g>
+          <polyline fill="none" stroke="${secret ? "#a98bff" : "#72b8ff"}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" points="12,132 42,116 72,72 104,94 132,62 168,110 196,96 226,52 260,78 294,70 326,92"/>
+          <g font-size="12" fill="${secret ? "#6f4bd9" : "#7b756e"}"><text x="22" y="52">${labels[0]}</text><text x="132" y="42">${labels[1]}</text><text x="98" y="176">${labels[2]}</text><text x="238" y="126">${labels[3]}</text></g>
+        </svg>`;
+      }
+
+      function renderLanding() {
+        state.screen = "landing";
+        phone.innerHTML = `<section class="screen landing">
+          <div class="side-mini">${btn("公告", "soft", "notice")}${btn("排行", "soft", "ranking")}${btn("签到", "soft", "signin")}</div>
+          <div class="title-block"><h2>韭菜保卫战</h2><p>大A生存局</p></div>
+          <p style="text-align:center;font-weight:800;">8人同局，2名主力，6棵韭菜，最终按 ROI 排名</p>
+          <div class="mascot-scene"><div class="speech left">又想割我？没门！</div><div class="k-monster"></div><div class="speech right">冲鸭！</div><div class="grass"></div></div>
+          <div class="stack">${btn("快速开局", "red", "game")}${btn("创建房间", "green", "room")}${btn("玩法说明", "blue", "help")}</div>
+          <div class="disclaimer">虚构娱乐模拟，不构成投资建议；所有本金值、操盘点均无现金价值。</div>
+        </section>`;
+        renderWorkspace();
+      }
+
+      function renderRoom() {
+        state.screen = "room";
+        const seats = state.players.map((p, i) => `<div class="seat s${i + 1} ${p[1] === "Bot" ? "bot" : ""}"><div class="avatar">${p[1]}</div><strong>${p[0]}</strong></div>`).join("");
+        phone.innerHTML = `<section class="screen room">
+          <div class="row">${btn("‹", "soft", "landing")}<div class="card" style="text-align:center;"><strong>房间号：666666</strong><p>经典模式 · 8人局</p></div>${btn("聊天", "soft", "notice")}</div>
+          <div class="seat-ring">${seats}<div class="seat-center"><span style="color:var(--deep-red)">2名隐藏主力</span><br><span style="color:var(--deep-green)">6名韭菜</span><p>等待中</p></div></div>
+          <div class="row">${btn("补Bot", "green", "notice")}${btn("邀请好友", "blue", "notice")}${btn("开始游戏", "yellow", "game")}</div>
+          <div class="disclaimer">提示：高买都是暂时的，亏钱是常态，ROI 才是最后排名。</div>
+        </section>`;
+      }
+
+      function retailGame() {
+        return `<section class="screen retail-screen">
+          <div class="row">${btn("韭菜", "green", "retail")}${btn("主力", "purple", "institution")}${btn("结算", "yellow", "result")}</div>
+          <h3 style="text-align:center;">第 2 / 5 交易日 · 集合竞价 01:08</h3>
+          <div class="phase-bar">${["盘前", "异动", "集合竞价", "开盘", "盘中", "收盘"].map((x, i) => `<div class="phase ${i === 2 ? "active" : ""}">${x}</div>`).join("")}</div>
+          <div class="card"><h3>韭菜小韭 · Lv.3</h3><div class="metric-grid"><div class="metric">总资产<strong class="profit">12,345.67</strong></div><div class="metric">今日盈亏<strong class="loss">-678.90</strong></div></div><p>今日目标：活着离开市场 / 不被割超过3次 / ROI 别垫底</p></div>
+          <div class="card" style="margin-top:10px;"><h3>泡泡叶股份 JC-001</h3><p><strong class="profit" style="font-size:32px;">10.05</strong> +0.50 +5.26%</p>${chart(false)}</div>
+          <div class="row" style="margin-top:10px;">${pageBtn("买入", "red", "BUY")}${pageBtn("卖出", "green", "SELL")}${pageBtn("撤单", "yellow", "CANCEL_ORDER")}</div>
+          <div class="row" style="margin-top:8px;">${pageBtn("全仓", "red", "FULL_POSITION")}${pageBtn("半仓", "green", "HALF_POSITION")}${pageBtn("1/3", "blue", "ONE_THIRD_POSITION")}${pageBtn("1/4", "blue", "ONE_QUARTER_POSITION")}</div>
+          <div class="bottom-nav">${pageBtn("首页", "soft", "HOME")}${pageBtn("行情", "soft", "MARKET")}${pageBtn("持仓", "soft", "HOLDING")}${pageBtn("社区", "soft", "COMMUNITY")}${pageBtn("我的", "soft", "MINE")}</div>
+        </section>`;
+      }
+
+      function institutionGame() {
+        return `<section class="screen institution-screen">
+          <div class="row">${btn("韭菜", "green", "retail")}${btn("主力", "purple", "institution")}${btn("结算", "yellow", "result")}</div>
+          <h3 style="text-align:center;color:var(--deep-purple);">主力界面 · 信息全面 · 操作复杂</h3>
+          <div class="card"><h3>隐藏主力 · Lv.99</h3><div class="metric-grid"><div class="metric">操盘资金<strong class="profit">9,876,543</strong></div><div class="metric">市场控制力<strong>87%</strong><div class="bar"><span style="width:87%"></span></div></div></div><p>监管风险值：23/100，当前状态：正常。</p></div>
+          <div class="card" style="margin-top:10px;"><h3>主力专属分时图</h3>${chart(true)}<p>主力持仓 62.3% / 散户持仓 30.1% / 游资持仓 7.6%</p></div>
+          <div class="tool-list" style="margin-top:10px;">${pageBtn("资金操控", "purple", "MAIN_FORCE_FUND_CONTROL")}${pageBtn("筹码分布", "purple", "CHIP_DISTRIBUTION")}${pageBtn("涨停控制", "purple", "LIMIT_CONTROL")}${pageBtn("消息发布", "yellow", "MESSAGE_PUBLISH")}${pageBtn("大V合作", "yellow", "KOL_COOPERATION")}${pageBtn("监管关系", "blue", "REGULATOR_RELATION")}</div>
+          <div class="bottom-nav six">${pageBtn("操盘台", "soft", "MAIN_FORCE_CONSOLE")}${pageBtn("市场监控", "soft", "MARKET_MONITOR")}${pageBtn("资金管理", "soft", "FUND_MANAGEMENT")}${pageBtn("关系网络", "soft", "NETWORK")}${pageBtn("监管公关", "soft", "REGULATION_PR")}${pageBtn("我的势力", "soft", "POWER")}</div>
+        </section>`;
+      }
+
+      function renderGame(role = state.role) {
+        state.screen = "game";
+        state.role = role;
+        phone.innerHTML = role === "institution" ? institutionGame() : retailGame();
+        renderWorkspace();
+      }
+
+      function renderResult() {
+        state.screen = "result";
+        phone.innerHTML = `<section class="screen result">
+          <div class="title-block"><h2 style="color:var(--deep-green)">ROI 冠军诞生</h2><p>第 5 日结束，按收益率排名结算</p></div>
+          <div class="mascot-scene"><div class="logo-leek"><div class="leek-body cry-face"><span></span></div></div><div class="boss-figure"></div><div class="grass"></div></div>
+          <div class="card"><h3>荣誉榜</h3><p>ROI 冠军：韭菜王 +78.6%</p><p>最大按捺侠：原来是韭</p><p>最强操盘手：主力一号</p></div>
+          <div class="row" style="margin-top:12px;">${btn("再来一局", "yellow", "room")}${btn("回首页", "blue", "landing")}</div>
+          <div class="disclaimer">所有排名、称号、资金均为局内虚构参数。</div>
+        </section>`;
+      }
+
+      function renderWorkspace() {
+        workspace.innerHTML = `
+          <div class="card preview"><h3>交易操作页</h3><div class="stack">${pageBtn("买入", "red", "BUY")}${pageBtn("卖出", "green", "SELL")}${pageBtn("撤单", "yellow", "CANCEL_ORDER")}${pageBtn("全仓", "red", "FULL_POSITION")}${pageBtn("半仓", "green", "HALF_POSITION")}${pageBtn("最终确认", "red", "FINAL_CONFIRM")}</div></div>
+          <div class="card preview"><h3>普通玩家导航</h3><div class="stack">${pageBtn("分时", "blue", "MINUTE")}${pageBtn("成交", "yellow", "TRADE_LIST")}${pageBtn("盘口", "green", "ORDER_BOOK")}${pageBtn("首页", "green", "HOME")}${pageBtn("行情", "blue", "MARKET")}${pageBtn("持仓", "yellow", "HOLDING")}${pageBtn("社区", "purple", "COMMUNITY")}${pageBtn("我的", "green", "MINE")}</div></div>
+          <div class="card preview"><h3>主力 7 大工具</h3><div class="stack">${pageBtn("资金操控", "purple", "MAIN_FORCE_FUND_CONTROL")}${pageBtn("筹码分布", "purple", "CHIP_DISTRIBUTION")}${pageBtn("涨停控制", "purple", "LIMIT_CONTROL")}${pageBtn("消息发布", "purple", "MESSAGE_PUBLISH")}${pageBtn("大V合作", "purple", "KOL_COOPERATION")}${pageBtn("监管关系", "purple", "REGULATOR_RELATION")}${pageBtn("小黑屋记录", "purple", "BLACK_ROOM_RECORD")}</div></div>
+          <div class="card preview"><h3>ROI 玩家收益榜</h3>${state.players.map((p, i) => `<div class="order-row"><span>${i + 1}. ${p[0]}</span><strong class="${p[2].startsWith("+") ? "profit" : "loss"}">${p[2]}</strong></div>`).join("")}</div>
+          <div class="card preview"><h3>盘面弹幕</h3>${state.bullets.map((x) => `<p>• ${x}</p>`).join("")}<div class="bar"><span style="width:76%"></span></div><p>监管热度 76%</p></div>
+          <div class="card preview"><h3>合规说明</h3><p>不接真实行情，不使用真实股票代码或真实上市公司名称，不提供投资建议。</p><p>本金值、操盘点、收割值均无现金价值。</p></div>
+        `;
+      }
+
+      function openPage(key) {
+        const p = pageMeta[key];
+        if (!p) return;
+        const [title, hero, desc, action, color] = p;
+        const boss = color === "purple";
+        pageCard.innerHTML = `<div class="page-head"><button class="icon-btn" data-close="1">‹</button><strong>${title}</strong><button class="icon-btn" data-close="1">?</button></div>
+          <div class="page-content">
+            <div class="page-title"><h2 style="color:var(--${color === "red" ? "deep-red" : color === "green" ? "deep-green" : color === "purple" ? "deep-purple" : color})">${hero}</h2><p>${desc}</p></div>
+            <div class="cute-panel">${boss ? '<div class="boss-figure"></div>' : '<div class="tiny-leek logo-leek"><div class="leek-body cry-face"><span></span></div></div>'}</div>
+            ${pageDetail(key)}
+            <div class="row" style="margin-top:12px;"><button class="jelly soft" data-close="1">再想想</button><button class="jelly ${color}" data-close="1">${action}</button></div>
+            <div class="disclaimer">虚构娱乐模拟，不构成投资建议。</div>
+          </div>`;
+        modalLayer.classList.add("active");
+      }
+
+      function pageDetail(key) {
+        if (key === "FULL_POSITION") return `<div class="dial">100%</div><div class="card"><p>投入比例：100%</p><p>预计投入：全部可用本金值</p></div>`;
+        if (key.includes("FUND") || key.includes("LIMIT") || key.includes("MESSAGE") || key.includes("CHIP")) return `<div class="card"><h3>控制参数</h3><p>滑条强度 68%</p><div class="bar"><span style="width:68%"></span></div><p>预期影响：ROI 波动、监管热度、弹幕情绪。</p></div>`;
+        if (key === "ORDER_BOOK") return `<div class="card"><h3>排队现场</h3><p>买一：10.05 / 1234</p><p>卖一：10.06 / 999</p><p>封单强度：82%</p></div>`;
+        if (key === "TRADE_LIST") return `<div class="card"><h3>成交流水</h3><p>09:31 买入 10.05 标签：手抖成交</p><p>10:42 卖出 9.88 标签：跑慢了</p></div>`;
+        return `<div class="card"><h3>泡泡叶股份 JC-001</h3><p>当前价：10.05 / 涨停价：11.00 / 跌停价：9.00</p><p>可用本金值：2,345.67</p><p>风险提示：局内虚构参数，无现金价值。</p></div>`;
+      }
+
+      const phone = document.getElementById("phone");
+      const workspace = document.getElementById("workspace");
+      const modalLayer = document.getElementById("modalLayer");
+      const pageCard = document.getElementById("pageCard");
+
+      document.body.addEventListener("click", (event) => {
+        const target = event.target.closest("button");
+        if (!target) return;
+        if (target.dataset.close) modalLayer.classList.remove("active");
+        if (target.dataset.page) openPage(target.dataset.page);
+        const action = target.dataset.action;
+        if (action === "landing") renderLanding();
+        if (action === "room") renderRoom();
+        if (action === "game") renderGame("retail");
+        if (action === "retail") renderGame("retail");
+        if (action === "institution") renderGame("institution");
+        if (action === "result") renderResult();
+        if (["notice", "ranking", "signin", "help"].includes(action)) openPage("HOME");
+      });
+
+      modalLayer.addEventListener("click", (event) => {
+        if (event.target === modalLayer) modalLayer.classList.remove("active");
+      });
+
+      renderLanding();
+    </script>
+  </body>
+</html>

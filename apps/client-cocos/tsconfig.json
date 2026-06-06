@@ -1,0 +1,33 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": []
+  },
+  "include": [
+    "assets/scripts/cocos-shim.d.ts",
+    "assets/scripts/Main.ts",
+    "assets/scripts/audio/VoiceLineManager.ts",
+    "assets/scripts/net/WsClient.ts",
+    "assets/scripts/store/ClientGameStore.ts",
+    "assets/scripts/ui/UiKit.ts",
+    "assets/scripts/ui/ScreenManager.ts",
+    "assets/scripts/ui/LandingScreen.ts",
+    "assets/scripts/ui/RoomScreen.ts",
+    "assets/scripts/ui/GameScreen.ts",
+    "assets/scripts/ui/MarketRankingPage.ts",
+    "assets/scripts/ui/ResultScreen.ts",
+    "assets/scripts/ui/components/PlayerListView.ts",
+    "assets/scripts/ui/components/PhaseBar.ts",
+    "assets/scripts/ui/components/SectorHeatmap.ts",
+    "assets/scripts/ui/components/StockCard.ts",
+    "assets/scripts/ui/components/DanmakuLayer.ts",
+    "assets/scripts/ui/components/VoiceLineToast.ts",
+    "assets/scripts/ui/components/ResultShareCard.ts",
+    "assets/scripts/ui/components/AuctionPanel.ts",
+    "assets/scripts/ui/components/LimitBoardPanel.ts",
+    "assets/scripts/ui/components/PositionCard.ts",
+    "assets/scripts/ui/components/RegulationPanel.ts",
+    "assets/scripts/ui/components/VotePanel.ts"
+  ]
+}

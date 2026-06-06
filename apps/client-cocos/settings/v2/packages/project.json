@@ -1,0 +1,12 @@
+{
+  "general": {
+    "designResolution": {
+      "width": 750,
+      "height": 1334,
+      "fitWidth": true,
+      "fitHeight": false
+    },
+    "startScene": "b6e16bd3-40c7-4dcc-8bdd-bc5fe9361d9b"
+  }
+}
+

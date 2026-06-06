@@ -1,0 +1,17 @@
+{
+  "name": "jiucai-defense",
+  "version": "0.1.0",
+  "private": true,
+  "description": "《韭菜保卫战：大A生存局》微信小游戏 MVP monorepo。",
+  "scripts": {
+    "dev:server": "pnpm --filter @jiucai-defense/server dev",
+    "test": "pnpm -r --if-present test",
+    "build": "pnpm -r --if-present build"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "packageManager": "pnpm@10.23.0"
+}

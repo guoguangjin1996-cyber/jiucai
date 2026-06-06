@@ -1,0 +1,20 @@
+export const GAME_NAME = "韭菜保卫战：大A生存局";
+export const GAME_NOTICE = "虚构娱乐模拟";
+export const SERVER_PORT = 8787;
+export const MAX_PLAYERS = 8;
+export const INSTITUTION_COUNT = 2;
+export const RETAIL_COUNT = 6;
+export const INITIAL_RETAIL_CAPITAL = 100;
+export const INITIAL_INSTITUTION_CAPITAL = 1000;
+export const INITIAL_CAPITAL = INITIAL_RETAIL_CAPITAL;
+export const INITIAL_CONFIDENCE = 3;
+export const INITIAL_CONTROL_POINTS = 5;
+export const INITIAL_FAKE_NEWS = 2;
+export const MAX_DAYS = 5;
+export const DEFAULT_LIMIT_RATE = 0.1;
+export const MAX_POSITIONS = 3;
+export const MAX_DAILY_ACTION_COUNT = 3;
+export const DEFAULT_ROOM_TYPE = "STANDARD_20";
+
+export const ROOM_PLAYER_COUNT = MAX_PLAYERS;
+export const TRADING_DAY_COUNT = MAX_DAYS;

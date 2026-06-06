@@ -1,0 +1,11 @@
+{
+  "common": {
+    "mainBundleCompressionType": "merge_dep",
+    "name": "jiucai-defense-client-cocos",
+    "outputName": "jiucai-defense-client-cocos",
+    "platform": "web-mobile",
+    "startSceneAssetBundle": false
+  },
+  "options": {}
+}
+

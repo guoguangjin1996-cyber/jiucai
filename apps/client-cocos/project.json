@@ -1,0 +1,8 @@
+{
+  "engine": "3.8.0",
+  "name": "jiucai-defense-client-cocos",
+  "uuid": "96a7d7c6-7463-45e6-9b63-d423fc85a4cf",
+  "packages": "packages",
+  "version": "0.1.0"
+}
+
