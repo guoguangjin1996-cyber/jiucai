@@ -14,6 +14,7 @@ export const DAY_PHASES = getRoomPhaseSequence(DEFAULT_GAME_ROOM_TYPE);
 export type DayFlowPhase = MarketPhase;
 
 export const FAST_MODE_PHASE_DURATION_MS = 200;
+export const FAST_MODE_MINIMUM_HOLD_MS = 40;
 
 export function isDayFlowPhase(
   phase: MarketPhase,
@@ -52,7 +53,7 @@ export function getMinimumPhaseHoldMs(
     return undefined;
   }
 
-  return fastMode ? Math.min(FAST_MODE_PHASE_DURATION_MS, holdSec * 1000) : holdSec * 1000;
+  return fastMode ? FAST_MODE_MINIMUM_HOLD_MS : holdSec * 1000;
 }
 
 export function phaseRequiresPlayerSubmission(phase: MarketPhase): boolean {

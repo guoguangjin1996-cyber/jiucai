@@ -37,8 +37,8 @@ describe("GameEngine day flow", () => {
     expect(phases.slice(0, 4)).toEqual([
       "PRE_NEWS",
       "MUTATION",
-      "AUCTION_FREE",
-      "AUCTION_LOCKED"
+      "INSTITUTION_PRIVATE_ROOM",
+      "AUCTION_FREE"
     ]);
 
     engine.stopAll();
@@ -53,10 +53,11 @@ describe("GameEngine day flow", () => {
     await vi.advanceTimersByTimeAsync(FAST_MODE_PHASE_DURATION_MS * DAY_PHASES.length);
 
     const finishedRoom = manager.getRoom(room.id);
-    expect(finishedRoom?.phase).toBe("DAY_RESULT");
+    expect(finishedRoom?.phase).toBe("PRE_NEWS");
+    expect(finishedRoom?.day).toBe(2);
     expect(
       finishedRoom?.logs.some(
-        (log) => log.type === "system:settlement" && log.phase === "DAY_RESULT"
+        (log) => log.type === "system:settlement" && log.phase === "DAY_RECAP"
       )
     ).toBe(true);
 

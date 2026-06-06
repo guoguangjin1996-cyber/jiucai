@@ -20,7 +20,7 @@ describe("8 bot auto play smoke test", () => {
 
     const roiLeader = rankPlayersByROI(current.players)[0];
 
-    expect(current.phase).toBe("DAY_RESULT");
+    expect(current.phase).toBe("DAY_RECAP");
     expect(roiLeader?.role).toMatch(/retail|institution/);
   });
 });
