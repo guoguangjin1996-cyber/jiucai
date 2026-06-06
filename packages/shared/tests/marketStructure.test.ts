@@ -5,6 +5,7 @@ import {
   calculateRiskScore,
   createFullMarketSectors,
   ELEMENT_SECTOR_TEMPLATES,
+  getInstitutionInitialResources,
   getRoomTypeConfig,
   getNayinStockTemplates,
   getStockCardTags,
@@ -13,11 +14,13 @@ import {
   MAX_PLAYERS,
   RETAIL_COUNT,
   rankPlayersByROI,
+  resetDailyOperationCredit,
   resolveChampion,
   resolveMarketRankings,
   resolveSectorStatusTags,
   resolveStockTags,
   type ElementSectorState,
+  type InstitutionPlayerState,
   type PlayerState
 } from "../src/index";
 
@@ -111,6 +114,44 @@ describe("five-element full-market data system", () => {
     expect(RETAIL_COUNT).toBe(6);
     expect(getRoomTypeConfig("LONG_30").maxPlayers).not.toBe(MAX_PLAYERS);
     expect(getRoomTypeConfig("STANDARD_20").retailCount).not.toBe(RETAIL_COUNT);
+  });
+
+  it("sets and resets institution operation resources without clearing off-market spend", () => {
+    expect(getInstitutionInitialResources("STANDARD_20")).toMatchObject({
+      initialCapital: 1000,
+      managedCapital: 20000,
+      dailyOperationCredit: 5000,
+      influenceBudget: 120,
+      maxControlPoints: 5
+    });
+
+    const institution: InstitutionPlayerState = {
+      playerId: "main-force",
+      initialCapital: 1000,
+      capital: 1000,
+      finalCapital: 1000,
+      roi: 0,
+      managedCapital: 20000,
+      dailyOperationCredit: 5000,
+      usedOperationCredit: 3500,
+      influenceBudget: 120,
+      influenceSpent: 30,
+      controlPoints: 1,
+      maxControlPoints: 5,
+      fakeNewsCount: 2,
+      personalHarvestScore: 0,
+      exposed: false,
+      focused: false,
+      hiddenDays: 0
+    };
+
+    expect(resetDailyOperationCredit(institution)).toMatchObject({
+      usedOperationCredit: 0,
+      controlPoints: 5,
+      influenceSpent: 30,
+      managedCapital: 20000,
+      influenceBudget: 120
+    });
   });
 
   it("contains 5 element sectors, 30 Nayin stocks, and 6 stocks per sector", () => {

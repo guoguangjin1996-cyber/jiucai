@@ -60,10 +60,11 @@ describe("RoomManager", () => {
     expect(result?.room?.players[0]?.nickname).toBe("房主");
   });
 
-  it("starts a standard game with two institutions and six retail players", () => {
+  it("starts a standard game with configured institutions and retail players", () => {
     const manager = new RoomManager(() => 0);
     const room = manager.createRoom("conn-1", "房主");
-    const maxPlayers = getRoomTypeConfig("STANDARD_20").maxPlayers;
+    const config = getRoomTypeConfig("STANDARD_20");
+    const maxPlayers = config.maxPlayers;
 
     for (let index = 2; index <= maxPlayers; index += 1) {
       manager.joinRoom(`conn-${index}`, room.id, `玩家${index}`);
@@ -71,13 +72,13 @@ describe("RoomManager", () => {
 
     const startedRoom = manager.startGame("conn-1", room.id);
 
-    expect(startedRoom.players).toHaveLength(getRoomTypeConfig("STANDARD_20").maxPlayers);
+    expect(startedRoom.players).toHaveLength(config.maxPlayers);
     expect(startedRoom.status).toBe("playing");
     expect(startedRoom.phase).toBe("PRE_NEWS");
     expect(startedRoom.day).toBe(1);
     expect(startedRoom.maxDays).toBe(5);
-    expect(startedRoom.players.filter((player) => player.role === "institution")).toHaveLength(2);
-    expect(startedRoom.players.filter((player) => player.role === "retail")).toHaveLength(6);
+    expect(startedRoom.players.filter((player) => player.role === "institution")).toHaveLength(config.institutionCount);
+    expect(startedRoom.players.filter((player) => player.role === "retail")).toHaveLength(config.retailCount);
     expect(startedRoom.players.filter((player) => player.role === "institution")[0]?.capital).toBe(1000);
     expect(startedRoom.players.filter((player) => player.role === "retail")[0]?.capital).toBe(100);
     expect(startedRoom.institution?.controlPoints).toBe(5);
@@ -126,9 +127,10 @@ describe("RoomManager", () => {
     manager.joinRoom("conn-2", room.id, "玩家2");
 
     const startedRoom = manager.startGame("conn-1", room.id);
+    const config = getRoomTypeConfig("STANDARD_20");
 
-    expect(startedRoom.players).toHaveLength(getRoomTypeConfig("STANDARD_20").maxPlayers);
-    expect(startedRoom.players.filter((player) => player.isBot)).toHaveLength(6);
+    expect(startedRoom.players).toHaveLength(config.maxPlayers);
+    expect(startedRoom.players.filter((player) => player.isBot)).toHaveLength(config.maxPlayers - 2);
     expect(startedRoom.players.some((player) => player.nickname === "涨停哥")).toBe(true);
   });
 });

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getRoomTypeConfig } from "@jiucai-defense/shared";
 import { FAST_MODE_MINIMUM_HOLD_MS, FAST_MODE_PHASE_DURATION_MS } from "../src/dayFlow";
 import { GameEngine } from "../src/gameEngine";
 import { RoomManager } from "../src/roomManager";
@@ -18,9 +19,10 @@ describe("room type and compressed time flow", () => {
 
     const quickLobby = manager.createRoom("quick", "快跑", "QUICK_10");
     const quick = manager.startGame("quick", quickLobby.id);
-    expect(quick.players).toHaveLength(8);
-    expect(quick.players.filter((player) => player.role === "institution")).toHaveLength(2);
-    expect(quick.players.filter((player) => player.role === "retail")).toHaveLength(6);
+    const quickConfig = getRoomTypeConfig("QUICK_10");
+    expect(quick.players).toHaveLength(quickConfig.maxPlayers);
+    expect(quick.players.filter((player) => player.role === "institution")).toHaveLength(quickConfig.institutionCount);
+    expect(quick.players.filter((player) => player.role === "retail")).toHaveLength(quickConfig.retailCount);
     expect(quick.maxDays).toBe(3);
     expect(quick.market?.sectors?.flatMap((sector) => sector.stocks)).toHaveLength(9);
     expect(quick.maxPositions).toBe(2);
@@ -29,9 +31,10 @@ describe("room type and compressed time flow", () => {
 
     const standardLobby = manager.createRoom("standard", "标准", "STANDARD_20");
     const standard = manager.startGame("standard", standardLobby.id);
-    expect(standard.players).toHaveLength(8);
-    expect(standard.players.filter((player) => player.role === "institution")).toHaveLength(2);
-    expect(standard.players.filter((player) => player.role === "retail")).toHaveLength(6);
+    const standardConfig = getRoomTypeConfig("STANDARD_20");
+    expect(standard.players).toHaveLength(standardConfig.maxPlayers);
+    expect(standard.players.filter((player) => player.role === "institution")).toHaveLength(standardConfig.institutionCount);
+    expect(standard.players.filter((player) => player.role === "retail")).toHaveLength(standardConfig.retailCount);
     expect(standard.maxDays).toBe(5);
     expect(standard.market?.sectors?.flatMap((sector) => sector.stocks)).toHaveLength(30);
     expect(standard.maxPositions).toBe(3);
@@ -39,9 +42,10 @@ describe("room type and compressed time flow", () => {
 
     const longLobby = manager.createRoom("long", "长盘", "LONG_30");
     const long = manager.startGame("long", longLobby.id);
-    expect(long.players).toHaveLength(8);
-    expect(long.players.filter((player) => player.role === "institution")).toHaveLength(2);
-    expect(long.players.filter((player) => player.role === "retail")).toHaveLength(6);
+    const longConfig = getRoomTypeConfig("LONG_30");
+    expect(long.players).toHaveLength(longConfig.maxPlayers);
+    expect(long.players.filter((player) => player.role === "institution")).toHaveLength(longConfig.institutionCount);
+    expect(long.players.filter((player) => player.role === "retail")).toHaveLength(longConfig.retailCount);
     expect(long.maxDays).toBe(7);
     expect(long.market?.sectors?.flatMap((sector) => sector.stocks)).toHaveLength(30);
     expect(long.maxPositions).toBe(4);

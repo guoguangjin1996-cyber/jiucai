@@ -150,19 +150,19 @@ describe("room type player structures", () => {
     });
   });
 
-  it("sets STANDARD_20 as 8 players with 2 institutions and 6 retail players", () => {
+  it("sets STANDARD_20 as 12 players with 2 institutions and 10 retail players", () => {
     expect(getRoomTypeConfig("STANDARD_20")).toMatchObject({
-      maxPlayers: 8,
+      maxPlayers: 12,
       institutionCount: 2,
-      retailCount: 6
+      retailCount: 10
     });
   });
 
-  it("sets LONG_30 as 8 players with 2 institutions and 6 retail players", () => {
+  it("sets LONG_30 as 16 players with 3 institutions and 13 retail players", () => {
     expect(getRoomTypeConfig("LONG_30")).toMatchObject({
-      maxPlayers: 8,
-      institutionCount: 2,
-      retailCount: 6
+      maxPlayers: 16,
+      institutionCount: 3,
+      retailCount: 13
     });
   });
 });

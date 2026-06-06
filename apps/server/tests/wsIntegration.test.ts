@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import type { AddressInfo } from "node:net";
+import { getRoomTypeConfig } from "@jiucai-defense/shared";
 import { createAppServer } from "../src/index";
 import type { RoomUpdatedPayload, WsMessage } from "../src/messages";
 
@@ -122,7 +123,8 @@ describe("front-back WebSocket integration", () => {
     );
 
     const room = started.payload.room;
-    expect(room.players).toHaveLength(8);
+    const config = getRoomTypeConfig("STANDARD_20");
+    expect(room.players).toHaveLength(config.maxPlayers);
     expect(room.players.filter((player) => player.role === "institution").length).toBeLessThanOrEqual(1);
     expect(room.players.filter((player) => player.role === "retail").length).toBeLessThanOrEqual(1);
     expect(room.market?.sectors).toHaveLength(5);

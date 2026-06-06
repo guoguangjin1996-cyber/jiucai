@@ -8,9 +8,10 @@ describe("bot auto play smoke test", () => {
     const manager = new RoomManager(() => 0);
     const room = manager.createRoom("conn-1", "内测员");
     const started = manager.startGame("conn-1", room.id);
+    const config = getRoomTypeConfig("STANDARD_20");
 
-    expect(started.players).toHaveLength(getRoomTypeConfig("STANDARD_20").maxPlayers);
-    expect(started.players.filter((player) => player.isBot)).toHaveLength(7);
+    expect(started.players).toHaveLength(config.maxPlayers);
+    expect(started.players.filter((player) => player.isBot)).toHaveLength(config.maxPlayers - 1);
 
     let current = started;
     for (const phase of DAY_PHASES) {

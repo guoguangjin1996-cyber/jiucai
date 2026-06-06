@@ -33,15 +33,15 @@ describe("game room type configs", () => {
       stockPoolMode: "NINE_STOCKS"
     });
     expect(getRoomTypeConfig("STANDARD_20")).toMatchObject({
-      maxPlayers: 8,
+      maxPlayers: 12,
       institutionCount: 2,
-      retailCount: 6,
+      retailCount: 10,
       stockPoolMode: "FULL_MARKET"
     });
     expect(getRoomTypeConfig("LONG_30")).toMatchObject({
-      maxPlayers: 8,
-      institutionCount: 2,
-      retailCount: 6,
+      maxPlayers: 16,
+      institutionCount: 3,
+      retailCount: 13,
       stockPoolMode: "FULL_MARKET"
     });
   });
