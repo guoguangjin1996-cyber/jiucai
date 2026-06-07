@@ -159,6 +159,15 @@ describe("retail tool server handling", () => {
     return { manager, roomId: started.id, stockId };
   }
 
+  function mutateStoredRoom(manager: RoomManager, roomId: string, update: (room: NonNullable<ReturnType<RoomManager["getRoom"]>>) => void): void {
+    const store = manager as unknown as { rooms: Map<string, NonNullable<ReturnType<RoomManager["getRoom"]>>> };
+    const room = store.rooms.get(roomId);
+    if (room === undefined) {
+      throw new Error("Expected room to be stored.");
+    }
+    update(room);
+  }
+
   it("rejects retail tools from institution players", () => {
     const { manager, stockId } = startRoomWithRetailPlayer();
 
@@ -245,5 +254,142 @@ describe("retail tool server handling", () => {
         overheatRisk: expect.any(Number)
       }
     });
+  });
+
+  it("records fake order mirror risk and raises warning power during auction", () => {
+    const { manager, roomId, stockId } = startRoomWithRetailPlayer();
+    mutateStoredRoom(manager, roomId, (room) => {
+      room.phase = "AUCTION_FREE";
+      const stock = room.market?.sectors?.[0]?.stocks[0];
+      if (stock !== undefined) {
+        stock.boardStrength = 90;
+        stock.boardBreakRisk = 70;
+        stock.regulationAttention = 60;
+        stock.retailWarningPower = 0;
+      }
+    });
+
+    const updated = manager.recordPlayerAction("conn-2", {
+      actionType: "retailTool",
+      action: "FAKE_ORDER_MIRROR",
+      stockId,
+      toolType: "FAKE_ORDER_MIRROR"
+    });
+    const stock = updated.market?.sectors?.flatMap((sector) => sector.stocks).find((item) => item.id === stockId);
+    const log = updated.logs.at(-1);
+
+    expect(stock?.retailWarningPower).toBeGreaterThan(0);
+    expect(log?.type).toBe("retail:toolAction");
+    expect(log?.payload).toMatchObject({
+      toolType: "FAKE_ORDER_MIRROR",
+      effects: {
+        fakeOrderRisk: expect.any(Number),
+        boardStrength: 90,
+        boardBreakRisk: 70,
+        regulationAttention: 60,
+        auctionFakeOrderRisk: true
+      }
+    });
+  });
+
+  it("lets core thermometer cool back-row risk when the center force weakens", () => {
+    const { manager, roomId } = startRoomWithRetailPlayer();
+    let coreStockId = "";
+    mutateStoredRoom(manager, roomId, (room) => {
+      const stocks = room.market?.sectors?.[0]?.stocks;
+      const core = stocks?.[0];
+      const backRow = stocks?.[1];
+      if (core !== undefined && backRow !== undefined) {
+        coreStockId = core.id;
+        core.tags = ["涓啗"];
+        core.changePercent = -3;
+        for (const stock of stocks ?? []) {
+          stock.changePercent = -3;
+          stock.boardBreakRisk = 80;
+        }
+        backRow.tags = ["鍚庢帓"];
+        backRow.crowdedness = 80;
+        backRow.overheatRisk = 80;
+        backRow.retailWarningPower = 0;
+      }
+    });
+
+    const updated = manager.recordPlayerAction("conn-2", {
+      actionType: "retailTool",
+      action: "CORE_THERMOMETER",
+      stockId: coreStockId,
+      toolType: "CORE_THERMOMETER"
+    });
+    const log = updated.logs.at(-1);
+
+    expect(log?.type).toBe("retail:toolAction");
+    expect(log?.payload).toMatchObject({
+      toolType: "CORE_THERMOMETER",
+      effects: {
+        coreWeak: true,
+        backRowCrowdednessDelta: -5,
+        backRowOverheatRiskDelta: -5,
+        retailWarningPowerDelta: 6
+      }
+    });
+  });
+
+  it("applies warning danmaku variants with observable effects", () => {
+    const { manager, roomId, stockId } = startRoomWithRetailPlayer();
+    mutateStoredRoom(manager, roomId, (room) => {
+      room.phase = "AUCTION_FREE";
+      const stock = room.market?.sectors?.[0]?.stocks[0];
+      if (stock !== undefined) {
+        stock.quantAttention = 80;
+        stock.tPlusOneCrowdedness = 80;
+        stock.crowdedness = 80;
+        stock.overheatRisk = 80;
+        stock.boardBreakRisk = 20;
+        stock.regulationAttention = 20;
+        stock.mainForceHypePower = 20;
+        stock.noisePower = 20;
+        stock.retailWarningPower = 0;
+      }
+    });
+
+    for (const warningType of ["WARN_RISK", "WARN_QUANT", "CALLOUT_FAKE_ORDER", "QUESTION_HYPE"] as const) {
+      const updated = manager.recordPlayerAction("conn-2", {
+        actionType: "retailTool",
+        action: "WARNING_DANMAKU",
+        stockId,
+        toolType: "WARNING_DANMAKU",
+        warningType
+      });
+      const stock = updated.market?.sectors?.flatMap((sector) => sector.stocks).find((item) => item.id === stockId);
+      expect(stock?.retailWarningPower).toBeGreaterThan(0);
+      expect(updated.logs.at(-1)?.payload).toMatchObject({
+        toolType: "WARNING_DANMAKU",
+        warningType
+      });
+    }
+  });
+
+  it("records passive retail tools without changing price", () => {
+    const { manager, roomId, stockId } = startRoomWithRetailPlayer();
+    mutateStoredRoom(manager, roomId, (room) => {
+      room.phase = "AUCTION_FREE";
+      const stock = room.market?.sectors?.[0]?.stocks[0];
+      if (stock !== undefined) {
+        stock.changePercent = 1.25;
+        stock.tPlusOneCrowdedness = 75;
+      }
+    });
+
+    for (const toolType of ["T_PLUS_ONE_BELT", "AUCTION_920_ALARM", "COOL_DOWN_CONFIRM"] as const) {
+      const updated = manager.recordPlayerAction("conn-2", {
+        actionType: "retailTool",
+        action: toolType,
+        stockId,
+        toolType
+      });
+      const stock = updated.market?.sectors?.flatMap((sector) => sector.stocks).find((item) => item.id === stockId);
+      expect(stock?.changePercent).toBe(1.25);
+      expect(updated.logs.at(-1)?.type).toBe("retail:toolAction");
+    }
   });
 });
