@@ -149,7 +149,11 @@ export interface PositionState {
   costPrice?: number;
   currentPrice?: number;
   amount?: number;
+  investedCapital?: number;
+  quantityUnit?: number;
   realizedProfit?: number;
+  unrealizedProfit?: number;
+  unrealizedReturn?: number;
   amountLevel: PositionAmountLevel;
   sellable: boolean;
   lockedReason?: PositionLockedReason;
@@ -329,6 +333,7 @@ export interface OrderFillResult {
     | "suspended"
     | "quant_drain"
     | "t_plus_one_locked"
+    | "no_position"
     | "position_limit"
     | "daily_action_limit"
     | "insufficient_capital";

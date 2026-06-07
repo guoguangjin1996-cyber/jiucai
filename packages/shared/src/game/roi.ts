@@ -1,4 +1,4 @@
-import type { PlayerRole, PlayerState } from "../types";
+import type { MarketState, PlayerRole, PlayerState, PositionState } from "../types";
 
 export interface RoleRankings {
   all: PlayerState[];
@@ -11,9 +11,29 @@ export interface FunnyTitleResult {
   titles: string[];
 }
 
-export function calculateROI(player: PlayerState): number {
+export function calculatePortfolioValue(player: PlayerState, market?: MarketState): number {
+  return roundMoney(player.capital + calculateHoldingsMarketValue(player, market));
+}
+
+export function updatePlayerCapitalAfterClose(player: PlayerState, market?: MarketState): PlayerState {
+  const positions = getPlayerPositions(player).map((position) => markPositionToMarket(position, market));
+  const finalCapital = calculatePortfolioValue({ ...player, positions }, market);
+  return {
+    ...player,
+    finalCapital,
+    roi: calculateROI({ ...player, positions, finalCapital }),
+    position: positions[0] ?? player.position,
+    positions
+  };
+}
+
+export function markToMarketAllPlayers(players: PlayerState[], market?: MarketState): PlayerState[] {
+  return players.map((player) => updatePlayerCapitalAfterClose(player, market));
+}
+
+export function calculateROI(player: PlayerState, market?: MarketState): number {
   const initialCapital = player.initialCapital ?? inferInitialCapital(player);
-  const finalCapital = player.finalCapital ?? player.capital;
+  const finalCapital = player.finalCapital ?? calculatePortfolioValue(player, market);
   if (initialCapital <= 0) {
     return 0;
   }
@@ -21,13 +41,16 @@ export function calculateROI(player: PlayerState): number {
   return Math.round(((finalCapital - initialCapital) / initialCapital) * 10000) / 10000;
 }
 
-export function rankPlayersByROI(players: PlayerState[]): PlayerState[] {
+export function rankPlayersByROI(players: PlayerState[], market?: MarketState): PlayerState[] {
   return [...players]
-    .map((player) => ({
-      ...player,
-      finalCapital: player.finalCapital ?? player.capital,
-      roi: calculateROI(player)
-    }))
+    .map((player) => {
+      const finalCapital = player.finalCapital ?? calculatePortfolioValue(player, market);
+      return {
+        ...player,
+        finalCapital,
+        roi: calculateROI({ ...player, finalCapital }, market)
+      };
+    })
     .sort((left, right) => (right.roi ?? 0) - (left.roi ?? 0));
 }
 
@@ -73,4 +96,52 @@ function inferInitialCapital(player: Pick<PlayerState, "role" | "capital">): num
     retail: 100
   };
   return defaults[player.role] ?? player.capital;
+}
+
+function calculateHoldingsMarketValue(player: PlayerState, market?: MarketState): number {
+  return roundMoney(
+    getPlayerPositions(player).reduce((sum, position) => sum + calculatePositionMarketValue(position, market), 0)
+  );
+}
+
+function calculatePositionMarketValue(position: PositionState, market?: MarketState): number {
+  if (!position.hasPosition) return 0;
+  const investedCapital = Math.max(0, position.amount ?? position.investedCapital ?? 0);
+  if (investedCapital <= 0) return 0;
+  const costPrice = Math.max(0.01, position.costPrice ?? position.currentPrice ?? findMarketPrice(position, market) ?? 1);
+  const currentPrice = Math.max(0.01, findMarketPrice(position, market) ?? position.currentPrice ?? costPrice);
+  return roundMoney((investedCapital * currentPrice) / costPrice);
+}
+
+function markPositionToMarket(position: PositionState, market?: MarketState): PositionState {
+  if (!position.hasPosition) return { ...position };
+  const investedCapital = Math.max(0, position.amount ?? position.investedCapital ?? 0);
+  const costPrice = Math.max(0.01, position.costPrice ?? position.currentPrice ?? findMarketPrice(position, market) ?? 1);
+  const currentPrice = Math.max(0.01, findMarketPrice(position, market) ?? position.currentPrice ?? costPrice);
+  const marketValue = calculatePositionMarketValue(position, market);
+  return {
+    ...position,
+    amount: investedCapital,
+    investedCapital,
+    currentPrice,
+    unrealizedProfit: roundMoney(marketValue - investedCapital),
+    unrealizedReturn: roundMoney(currentPrice / costPrice - 1)
+  };
+}
+
+function findMarketPrice(position: PositionState, market?: MarketState): number | undefined {
+  if (position.stockId === undefined) return undefined;
+  return market?.sectors?.flatMap((sector) => sector.stocks).find((stock) => stock.id === position.stockId)?.currentPrice;
+}
+
+function getPlayerPositions(player: PlayerState): PositionState[] {
+  if (player.positions !== undefined && player.positions.length > 0) {
+    return player.positions.map((position) => ({ ...position }));
+  }
+  return player.position.hasPosition ? [{ ...player.position }] : [];
+}
+
+function roundMoney(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }

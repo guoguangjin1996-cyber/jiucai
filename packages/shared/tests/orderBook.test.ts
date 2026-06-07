@@ -321,6 +321,42 @@ describe("background order book liquidity", () => {
     expect(updated.positions).toHaveLength(0);
   });
 
+  it("caps buy fills at available player capital", () => {
+    const target = stock({ liquidity: 100 });
+    const fill = resolveOrderFill(request("buy", 1000), createInitialOrderBook(target), target, player({ capital: 120 }), room([target]));
+    const updated = applyOrderFill(player({ capital: 120 }), fill, target, room([target]));
+
+    expect(fill.filledAmount).toBeLessThanOrEqual(120);
+    expect(updated.capital).toBeGreaterThanOrEqual(0);
+    expect(updated.positions?.[0]?.investedCapital).toBe(fill.filledAmount);
+  });
+
+  it("does not add cash when selling without a matching position", () => {
+    const target = stock();
+    const fill = resolveOrderFill(request("sell", 100), createInitialOrderBook(target), target, player({ capital: 50 }), room([target]));
+    const updated = applyOrderFill(player({ capital: 50 }), fill, target, room([target]));
+
+    expect(fill.status).toBe("unfilled");
+    expect(fill.reason).toBe("no_position");
+    expect(updated.capital).toBe(50);
+    expect(updated.positions).toHaveLength(0);
+  });
+
+  it("caps sell fills at the real position market value", () => {
+    const target = stock({ currentPrice: 120 });
+    const seller = player({
+      capital: 10,
+      positions: [{ stockId: target.id, hasPosition: true, amount: 100, investedCapital: 100, costPrice: 100, currentPrice: 120, amountLevel: "normal", sellable: true }],
+      position: { stockId: target.id, hasPosition: true, amount: 100, investedCapital: 100, costPrice: 100, currentPrice: 120, amountLevel: "normal", sellable: true }
+    });
+    const fill = resolveOrderFill(request("sell", 1000), createInitialOrderBook(target), target, seller, room([target]));
+    const updated = applyOrderFill(seller, fill, target, room([target]));
+
+    expect(fill.filledAmount).toBeLessThanOrEqual(120);
+    expect(updated.capital).toBeCloseTo(10 + fill.filledAmount, 2);
+    expect(updated.positions?.[0]?.amount ?? 0).toBeLessThanOrEqual(100);
+  });
+
   it("raises crowdedness after a buy fill", () => {
     const target = stock({ crowdedness: 20 });
     const fill = resolveOrderFill(request("buy", 500), createInitialOrderBook(target), target, player({ capital: 1000 }), room([target]));

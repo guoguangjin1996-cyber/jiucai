@@ -33,6 +33,7 @@ import {
   resolveGameRoomType,
   resetDailyOperationCredit,
   getOpenStatus,
+  markToMarketAllPlayers,
   rankPlayersByROI,
   resolveChampion,
   resolveAuctionPressure,
@@ -2706,25 +2707,27 @@ export class RoomManager {
         ? undefined
         : resolveSectorStatusTags(resolveStockTags(room.market.sectors));
 
+    const market = {
+      ...room.market,
+      isLimitUp: marketResolution.isLimitUp,
+      isLimitDown: marketResolution.isLimitDown,
+      boardStrength: marketResolution.boardStrength,
+      regulationHeat,
+      regulationState: getRegulationState(regulationHeat),
+      closePrice,
+      currentPrice: closePrice,
+      ...(refreshedSectors === undefined
+        ? {}
+        : {
+            sectors: refreshedSectors,
+            rankings: resolveMarketRankings(refreshedSectors)
+          })
+    };
+
     return {
       ...room,
-      players: settledPlayers,
-      market: {
-        ...room.market,
-        isLimitUp: marketResolution.isLimitUp,
-        isLimitDown: marketResolution.isLimitDown,
-        boardStrength: marketResolution.boardStrength,
-        regulationHeat,
-        regulationState: getRegulationState(regulationHeat),
-        closePrice,
-        currentPrice: closePrice,
-        ...(refreshedSectors === undefined
-          ? {}
-          : {
-              sectors: refreshedSectors,
-              rankings: resolveMarketRankings(refreshedSectors)
-            })
-      },
+      players: markToMarketAllPlayers(settledPlayers, market) as RoomPlayer[],
+      market,
       dayResult: result,
       dailyTrend: [
         ...room.dailyTrend,
@@ -3052,14 +3055,13 @@ export class RoomManager {
       return room;
     }
 
-    const players = room.players.map((player) => this.applyElimination(player, room.day));
+    const players = markToMarketAllPlayers(
+      room.players.map((player) => this.applyElimination(player, room.day)),
+      room.market
+    ) as RoomPlayer[];
     const candidateRoom = {
       ...room,
-      players: players.map((player) => ({
-        ...player,
-        finalCapital: player.capital,
-        roi: rankPlayersByROI([player])[0]?.roi ?? 0
-      }))
+      players
     };
 
     if (candidateRoom.day < candidateRoom.maxDays) {

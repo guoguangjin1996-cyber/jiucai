@@ -17,6 +17,10 @@ export function buyPosition(
     hasPosition: true,
     buyDay: day,
     costPrice,
+    currentPrice: costPrice,
+    amount: 0,
+    investedCapital: 0,
+    quantityUnit: 0,
     amountLevel,
     sellable: false,
     lockedReason: "T+1"

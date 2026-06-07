@@ -12,7 +12,7 @@ import type {
 } from "../types";
 import { createBackgroundMarketFunds, resolveBackgroundMarketFundsModifier } from "./priceTemplate";
 
-export const ORDER_FILL_REASON_TEXT: Record<NonNullable<OrderFillResult["reason"]>, string> = {
+export const ORDER_FILL_REASON_TEXT: Partial<Record<NonNullable<OrderFillResult["reason"]>, string>> = {
   limit_up_queue: "排队人数爆炸，买入可能失败。",
   limit_down_queue: "门在那边，但现在打不开。",
   low_liquidity: "这票能买，但不一定能体面地跑。",
@@ -23,6 +23,8 @@ export const ORDER_FILL_REASON_TEXT: Record<NonNullable<OrderFillResult["reason"
   daily_action_limit: "今日主动操作次数已用完。",
   insufficient_capital: "本金值不足，无法完成本次买入。"
 };
+
+ORDER_FILL_REASON_TEXT.no_position = "没有这只纳音票的真实持仓，不能凭空卖出。";
 
 export function createInitialOrderBook(stock: StockMarketState): OrderBookLiquidity {
   const depth = resolveBaseDepth(stock);
@@ -151,9 +153,14 @@ export function resolveOrderFill(
   }
 
   const effectiveAmount =
-    request.side === "buy" ? Math.min(requestedAmount, Math.max(0, player.capital)) : requestedAmount;
+    request.side === "buy"
+      ? Math.min(requestedAmount, Math.max(0, player.capital))
+      : Math.min(requestedAmount, getSellablePositionMarketValue(player, request.stockId));
   if (request.side === "buy" && effectiveAmount <= 0) {
     return toFillResult(baseResult, 0, "insufficient_capital");
+  }
+  if (request.side === "sell" && effectiveAmount <= 0) {
+    return toFillResult(baseResult, 0, "no_position");
   }
 
   const availableDepth = request.side === "buy" ? orderBook.sellDepth : orderBook.buyDepth;
@@ -165,7 +172,7 @@ export function resolveOrderFill(
   const fillRate = clamp(baseFillRate * liquidityFactor * marketStateFactor * quantPenalty * lowLiquidityPenalty, 0, 1);
   const reason = resolveFillReason(request, orderBook, stockState, room);
 
-  return toFillResult(baseResult, fillRate, reason);
+  return toFillResult(baseResult, fillRate, reason, effectiveAmount);
 }
 
 export function applyOrderFill(
@@ -204,9 +211,12 @@ export function applyOrderFill(
   }
 
   const sellUpdate = applySellToPositions(player, fillResult);
+  if (sellUpdate.soldProceeds <= 0) {
+    return clonePlayer(player);
+  }
   return {
     ...clonePlayer(player),
-    capital: roundMoney(player.capital + fillResult.filledAmount),
+    capital: roundMoney(player.capital + sellUpdate.soldProceeds),
     position: sellUpdate.positions[0] ?? createEmptyPositionLike(),
     positions: sellUpdate.positions,
     dailyActionCount
@@ -279,7 +289,7 @@ export function createOrderFillViewModel(fillResult: OrderFillResult): OrderFill
     filledAmount: fillResult.filledAmount,
     unfilledAmount: fillResult.unfilledAmount,
     avgFillPrice: fillResult.avgFillPrice,
-    ...(fillResult.reason === undefined ? {} : { reasonText: ORDER_FILL_REASON_TEXT[fillResult.reason] })
+    ...(fillResult.reason === undefined ? {} : { reasonText: ORDER_FILL_REASON_TEXT[fillResult.reason] ?? fillResult.reason })
   };
 }
 
@@ -349,6 +359,7 @@ function getBlockingReason(
   }
   if (request.side === "buy" && player.capital <= 0) return "insufficient_capital";
   if (request.side === "buy" && openPositionCount(player) >= maxPositions(room)) return "position_limit";
+  if (request.side === "sell" && !hasPosition(player, request.stockId)) return "no_position";
   if (request.side === "sell" && hasTPlusOneLock(player, request.stockId)) return "t_plus_one_locked";
   if (stockState.isLimitUp && request.side === "buy") return undefined;
   if (stockState.isLimitDown && request.side === "sell") return undefined;
@@ -387,6 +398,25 @@ function hasTPlusOneLock(player: PlayerState, stockId: string): boolean {
   );
 }
 
+function hasPosition(player: PlayerState, stockId: string): boolean {
+  return getPositions(player).some(
+    (position) => position.hasPosition && position.stockId === stockId && (position.amount ?? position.investedCapital ?? 0) > 0
+  );
+}
+
+function getSellablePositionMarketValue(player: PlayerState, stockId: string): number {
+  return roundMoney(
+    getPositions(player)
+      .filter((position) => position.hasPosition && position.stockId === stockId && position.sellable)
+      .reduce((sum, position) => {
+        const amount = Math.max(0, position.amount ?? position.investedCapital ?? 0);
+        const costPrice = Math.max(0.01, position.costPrice ?? position.currentPrice ?? 1);
+        const currentPrice = Math.max(0.01, position.currentPrice ?? costPrice);
+        return sum + (amount * currentPrice) / costPrice;
+      }, 0)
+  );
+}
+
 function openPositionCount(player: PlayerState): number {
   return getPositions(player).filter((position) => position.hasPosition).length;
 }
@@ -399,12 +429,13 @@ function maxPositions(room: GameRoom): number {
 function toFillResult(
   base: Pick<OrderFillResult, "playerId" | "stockId" | "side" | "requestedAmount" | "avgFillPrice">,
   fillRate: number,
-  reason?: OrderFillResult["reason"]
+  reason?: OrderFillResult["reason"],
+  executableAmount = base.requestedAmount
 ): OrderFillResult {
   const roundedFillRate = roundRate(fillRate);
-  const filledAmount = roundMoney(base.requestedAmount * roundedFillRate);
+  const filledAmount = roundMoney(Math.min(base.requestedAmount, Math.max(0, executableAmount)) * roundedFillRate);
   const unfilledAmount = roundMoney(base.requestedAmount - filledAmount);
-  const status = roundedFillRate >= 0.99 ? "filled" : roundedFillRate > 0 ? "partial" : "unfilled";
+  const status = filledAmount >= base.requestedAmount && roundedFillRate > 0 ? "filled" : filledAmount > 0 ? "partial" : "unfilled";
 
   return {
     ...base,
@@ -436,6 +467,8 @@ function upsertBoughtPosition(
         costPrice: fillResult.avgFillPrice,
         currentPrice: stockState.currentPrice,
         amount: fillResult.filledAmount,
+        investedCapital: fillResult.filledAmount,
+        quantityUnit: fillResult.filledAmount / Math.max(0.01, fillResult.avgFillPrice),
         amountLevel: amountLevelFor(fillResult.filledAmount),
         sellable: false,
         lockedReason: "T+1"
@@ -448,6 +481,10 @@ function upsertBoughtPosition(
       ? {
           ...position,
           amount: roundMoney((position.amount ?? 0) + fillResult.filledAmount),
+          investedCapital: roundMoney((position.investedCapital ?? position.amount ?? 0) + fillResult.filledAmount),
+          quantityUnit: roundMoney(
+            (position.quantityUnit ?? 0) + fillResult.filledAmount / Math.max(0.01, fillResult.avgFillPrice)
+          ),
           currentPrice: stockState.currentPrice,
           sellable: false,
           lockedReason: "T+1"
@@ -459,31 +496,46 @@ function upsertBoughtPosition(
 function applySellToPositions(
   player: PlayerState,
   fillResult: OrderFillResult
-): { positions: PositionState[] } {
-  let remainingSellAmount = fillResult.filledAmount;
+): { positions: PositionState[]; soldProceeds: number } {
+  let remainingSellValue = fillResult.filledAmount;
+  let soldProceeds = 0;
   const positions: PositionState[] = [];
 
   for (const position of getPositions(player)) {
-    if (!position.hasPosition || position.stockId !== fillResult.stockId || remainingSellAmount <= 0) {
+    if (!position.hasPosition || position.stockId !== fillResult.stockId || remainingSellValue <= 0) {
       positions.push({ ...position });
       continue;
     }
 
-    const positionAmount = position.amount ?? fillResult.requestedAmount;
-    const soldAmount = Math.min(positionAmount, remainingSellAmount);
-    const remainingPositionAmount = roundMoney(positionAmount - soldAmount);
-    remainingSellAmount = roundMoney(remainingSellAmount - soldAmount);
+    const positionAmount = Math.max(0, position.amount ?? position.investedCapital ?? 0);
+    const costPrice = Math.max(0.01, position.costPrice ?? fillResult.avgFillPrice);
+    const currentPrice = Math.max(0.01, position.currentPrice ?? fillResult.avgFillPrice);
+    const positionMarketValue = roundMoney((positionAmount * currentPrice) / costPrice);
+    const soldValue = Math.min(positionMarketValue, remainingSellValue);
+    const soldRatio = positionMarketValue <= 0 ? 0 : soldValue / positionMarketValue;
+    const soldInvestedCapital = roundMoney(positionAmount * soldRatio);
+    const remainingPositionAmount = roundMoney(positionAmount - soldInvestedCapital);
+    const realizedProfit = roundMoney(soldValue - soldInvestedCapital);
+    remainingSellValue = roundMoney(remainingSellValue - soldValue);
+    soldProceeds = roundMoney(soldProceeds + soldValue);
 
     if (remainingPositionAmount > 0) {
+      const remainingQuantityUnit =
+        position.quantityUnit === undefined ? undefined : roundMoney(position.quantityUnit * (1 - soldRatio));
       positions.push({
         ...position,
         amount: remainingPositionAmount,
-        realizedProfit: roundMoney((position.realizedProfit ?? 0) + soldAmount - (position.costPrice ?? 0))
+        investedCapital: remainingPositionAmount,
+        ...(remainingQuantityUnit === undefined ? {} : { quantityUnit: remainingQuantityUnit }),
+        realizedProfit: roundMoney((position.realizedProfit ?? 0) + realizedProfit),
+        currentPrice,
+        unrealizedProfit: roundMoney((remainingPositionAmount * currentPrice) / costPrice - remainingPositionAmount),
+        unrealizedReturn: roundMoney(currentPrice / costPrice - 1)
       });
     }
   }
 
-  return { positions };
+  return { positions, soldProceeds };
 }
 
 function getPositions(player: PlayerState): PositionState[] {
